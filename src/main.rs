@@ -39,20 +39,44 @@ pub fn Hero() -> Element {
 
 #[component]
 pub fn Editor() -> Element {
+    let mut frames = use_signal(|| vec![[[false; 44]; 11]]);
     rsx! {
         div {
-            class: "flex flex-col",
-            for y in 0..11 {
+            class: "flex flex-col gap-4",
+            for frame_index in 0..frames.read().len() {
                 div {
                     class: "flex",
-                    for x in 0..44 {
-                        div {
-                            class: "w-4 h-4 border border-gray-300",
-                        }
-                    }
+                    div{
+                        for y in 0..11 {
+                            div {
+                                class: "flex",
+                                for x in 0..44 {
+                                    div {
+                                        class: "w-4 h-4 border border-gray-300",
+                                    }
+                                }
 
+                            }
+                        }
+                    },
+                    button {
+                        class: "p-2 bg-red-500 text-white btn",
+                        onclick: {
+                            move |_| {
+                                frames.remove(frame_index);
+                            }
+                        },
+                        "X"
+                    }
                 }
 
+            }
+            button {
+                class: "p-2 bg-blue-500 text-white btn",
+                onclick: move |_| {
+                    frames.push([[false; 44]; 11]);
+                },
+                "Add Frame"
             }
 
         }
