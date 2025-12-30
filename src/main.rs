@@ -65,6 +65,7 @@ fn load_config(config: &str, old_padding: u8) -> (Vec<[[bool; 44]; 11]>, u8, u8)
     let mut padding = old_padding;
     let mut in_bitstring = false;
     let mut current_frame: Vec<[[bool; 44]; 11]> = vec![];
+    let mut current_y = 0;
     for line in config.lines() {
         if line.starts_with("speed =") {
             if let Some(s) = line.split('=').nth(1) {
@@ -91,11 +92,11 @@ fn load_config(config: &str, old_padding: u8) -> (Vec<[[bool; 44]; 11]>, u8, u8)
                 for x in 0..44 {
                     let char_index = frame_index * row_len + x;
                     if char_index < chars.len() {
-                        let last_y = current_frame.len() - 1;
-                        current_frame[frame_index][last_y][x] = chars[char_index] == 'X';
+                        current_frame[frame_index][current_y][x] = chars[char_index] == 'X';
                     }
                 }
             }
+            current_y += 1;
         }
     }
     for frame in current_frame {
