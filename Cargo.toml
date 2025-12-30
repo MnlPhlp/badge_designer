@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 dioxus = { version = "0.7.1", features = [] }
-web-sys = { version = "0.3", features = ["Blob", "Url", "HtmlAnchorElement", "Document", "Window", "BlobPropertyBag"] }
+web-sys = { version = "0.3", features = ["Blob", "Url", "HtmlAnchorElement", "Document", "Window", "BlobPropertyBag", "Storage"] }
 
 [features]
 default = ["web"]

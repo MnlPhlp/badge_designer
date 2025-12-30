@@ -110,11 +110,54 @@ pub fn Editor() -> Element {
     let mut frames = use_signal(|| vec![[[false; 44]; 11]]);
     let mut adding = use_signal(|| true);
     let mut active = use_signal(|| false);
-    let mut padding = use_signal(|| 0);
-    let mut speed = use_signal(|| 5);
+    let mut padding = use_signal(|| 0u8);
+    let mut speed = use_signal(|| 5u8);
     let mut focused_frame = use_signal(|| 0usize);
     let mut focused_x = use_signal(|| 0usize);
     let mut focused_y = use_signal(|| 0usize);
+    let mut loaded = use_signal(|| false);
+
+    let storage = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten();
+
+    // Load from localStorage on mount
+    {
+        let storage = storage.clone();
+        use_effect(move || {
+            if let Some(storage) = &storage {
+                if let Ok(Some(config)) = storage.get_item("badge_designer_state") {
+                    if !config.is_empty() {
+                        let (new_frames, new_padding, new_speed) = load_config(&config, 0);
+                        if !new_frames.is_empty() {
+                            *frames.write() = new_frames;
+                            *padding.write() = new_padding;
+                            *speed.write() = new_speed;
+                        }
+                    }
+                }
+            }
+            *loaded.write() = true;
+        });
+    }
+
+    // Memo that only produces a value after loaded
+    let save_config = use_memo(move || {
+        if !loaded() {
+            return None;
+        }
+        Some(create_config(frames(), padding(), speed()))
+    });
+
+    // Save to localStorage when config changes
+    use_effect(move || {
+        if let Some(config) = save_config() {
+            if let Some(storage) = &storage {
+                let _ = storage.set_item("badge_designer_state", &config);
+            }
+        }
+    });
+
     rsx! {
         div {
             class: "flex flex-col gap-4",
