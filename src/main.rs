@@ -232,6 +232,23 @@ pub fn Editor() -> Element {
                 },
                 "Export"
             }
+            input {
+                r#type: "file",
+                accept: ".toml",
+                onchange: move |e| async move {
+                    let files = e.files();
+                    if let Some(file) = files.first() {
+                        if let Ok(contents) = file.read_string().await {
+                            let (new_frames, new_padding, new_speed) = load_config(&contents, padding());
+                            if !new_frames.is_empty() {
+                                *frames.write() = new_frames;
+                                *padding.write() = new_padding;
+                                *speed.write() = new_speed;
+                            }
+                        }
+                    }
+                },
+            }
         }
     }
 }
