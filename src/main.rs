@@ -112,9 +112,44 @@ pub fn Editor() -> Element {
     let mut active = use_signal(|| false);
     let mut padding = use_signal(|| 0);
     let mut speed = use_signal(|| 5);
+    let mut focused_frame = use_signal(|| 0usize);
+    let mut focused_x = use_signal(|| 0usize);
+    let mut focused_y = use_signal(|| 0usize);
     rsx! {
         div {
             class: "flex flex-col gap-4",
+            tabindex: "0",
+            onkeydown: move |e| {
+                match e.key() {
+                    Key::ArrowUp => {
+                        if focused_y() > 0 {
+                            *focused_y.write() -= 1;
+                        }
+                    }
+                    Key::ArrowDown => {
+                        if focused_y() < 10 {
+                            *focused_y.write() += 1;
+                        }
+                    }
+                    Key::ArrowLeft => {
+                        if focused_x() > 0 {
+                            *focused_x.write() -= 1;
+                        }
+                    }
+                    Key::ArrowRight => {
+                        if focused_x() < 43 {
+                            *focused_x.write() += 1;
+                        }
+                    }
+                    Key::Character(c) if c == " " => {
+                        let fi = focused_frame();
+                        let fy = focused_y();
+                        let fx = focused_x();
+                        frames.write()[fi][fy][fx] = !frames()[fi][fy][fx];
+                    }
+                    _ => {}
+                }
+            },
             label {
                 "Padding between frames: ",
                 input {
@@ -150,9 +185,13 @@ pub fn Editor() -> Element {
                                 class: "flex",
                                 for x in 0..44 {
                                     button {
-                                        class: "w-4 h-4 border border-gray-300",
+                                        class: "w-4 h-4 border",
+                                        class: if focused_frame() == frame_index && focused_x() == x && focused_y() == y { "border-green-500 border-2" } else { "border-gray-300" },
                                         class: if frames.read()[frame_index][y][x] { " bg-white" } else { "bg-black" },
                                         onmousedown: move |_| {
+                                            *focused_frame.write() = frame_index;
+                                            *focused_x.write() = x;
+                                            *focused_y.write() = y;
                                             *adding.write() = !frames()[frame_index][y][x];
                                             *active.write() = true;
                                             frames.write()[frame_index][y][x] = adding();
