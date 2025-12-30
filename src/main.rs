@@ -297,6 +297,15 @@ pub fn Editor() -> Element {
                 "Add Frame"
             },
             button {
+                class: "p-2 bg-purple-500 text-white btn",
+                onclick: move |_| {
+                    let current = frames();
+                    let mut reversed: Vec<_> = current.iter().rev().cloned().collect();
+                    frames.write().append(&mut reversed);
+                },
+                "Make Cycle"
+            },
+            button {
                 onclick: move |_| async move {
                     let file = create_config(frames(), padding(), speed());
                     let js = format!(
