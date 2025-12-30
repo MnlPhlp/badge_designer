@@ -37,16 +37,26 @@ pub fn Hero() -> Element {
     }
 }
 
-fn create_config(frames: Vec<[[bool; 44]; 11]>) -> String {
+fn create_config(frames: Vec<[[bool; 44]; 11]>, padding: u8, speed: u8) -> String {
     let mut bitstring = String::new();
     for y in 0..11 {
         for frame in &frames {
             for x in 0..44 {
                 bitstring.push(if frame[y][x] { 'X' } else { '_' });
             }
+            for _ in 0..padding {
+                bitstring.push('_');
+            }
         }
+        bitstring.push('\n');
     }
-    bitstring
+    format!(
+        r#"[[message]]
+speed = {speed}
+mode = "fast"
+bitstring = """
+{bitstring}""""#
+    )
 }
 
 #[component]
@@ -54,9 +64,37 @@ pub fn Editor() -> Element {
     let mut frames = use_signal(|| vec![[[false; 44]; 11]]);
     let mut adding = use_signal(|| true);
     let mut active = use_signal(|| false);
+    let mut padding = use_signal(|| 0);
+    let mut speed = use_signal(|| 5);
     rsx! {
         div {
             class: "flex flex-col gap-4",
+            label {
+                "Padding between frames: ",
+                input {
+                    r#type: "number",
+                    value: "{padding}",
+                    oninput: move |e| {
+                        if let Ok(value) = e.value().parse::<u8>() {
+                            *padding.write() = value;
+                        }
+                    }
+                }
+            },
+            label {
+                "Speed: ",
+                input {
+                    r#type: "number",
+                    value: "{speed}",
+                    oninput: move |e| {
+                        if let Ok(value) = e.value().parse::<u8>() {
+                            if value >= 1 && value <= 7 {
+                                *speed.write() = value;
+                            }
+                        }
+                    }
+                }
+            },
             for frame_index in 0..frames.read().len() {
                 div {
                     class: "flex",
@@ -81,27 +119,43 @@ pub fn Editor() -> Element {
                             }
                         }
                     },
-                    button {
-                        class: "p-2 bg-blue-500 text-white btn",
-                        onclick: {
-                            move |_| {
-                                for y in 0..11 {
-                                    for x in 0..44{
-                                        frames.write()[frame_index][y][x] = !frames()[frame_index][y][x];
+                    div {
+                        class: "flex gap-4",
+                        button {
+                            class: "p-2 bg-blue-500 text-white btn",
+                            onclick: {
+                                move |_| {
+                                    for y in 0..11 {
+                                        for x in 0..44{
+                                            frames.write()[frame_index][y][x] = !frames()[frame_index][y][x];
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        "invert"
-                    }
-                    button {
-                        class: "p-2 bg-red-500 text-white btn",
-                        onclick: {
-                            move |_| {
-                                frames.remove(frame_index);
-                            }
-                        },
-                        "X"
+                            },
+                            "invert"
+                        }
+                        button {
+                            class: "p-2 bg-blue-500 text-white btn",
+                            onclick: {
+                                move |_| {
+                                    for y in 0..11 {
+                                        for x in 0..44{
+                                            frames.write()[frame_index][y][x] = false;
+                                        }
+                                    }
+                                }
+                            },
+                            "clear"
+                        }
+                        button {
+                            class: "p-2 bg-red-500 text-white btn",
+                            onclick: {
+                                move |_| {
+                                    frames.remove(frame_index);
+                                }
+                            },
+                            "X"
+                        }
                     }
                 }
 
@@ -109,15 +163,27 @@ pub fn Editor() -> Element {
             button {
                 class: "p-2 bg-blue-500 text-white btn",
                 onclick: move |_| {
-                    frames.push([[false; 44]; 11]);
+                    let last_frame = frames.read().last().cloned().unwrap_or([[false; 44]; 11]);
+                    frames.write().push(last_frame);
                 },
                 "Add Frame"
             },
             button {
-                onclick: move |_| {
-                    let file = create_config(frames());
-                    // trigger download
-
+                onclick: move |_| async move {
+                    let file = create_config(frames(), padding(), speed());
+                    let js = format!(
+                        r#"
+                        const blob = new Blob([`{}`], {{ type: 'text/plain' }});
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'badge.toml';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        "#,
+                        file
+                    );
+                    document::eval(&js);
                 },
                 "Export"
             }
