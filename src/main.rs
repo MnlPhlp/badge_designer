@@ -59,6 +59,51 @@ bitstring = """
     )
 }
 
+fn load_config(config: &str, old_padding: u8) -> (Vec<[[bool; 44]; 11]>, u8, u8) {
+    let mut frames = Vec::new();
+    let mut speed = 5;
+    let mut padding = old_padding;
+    let mut in_bitstring = false;
+    let mut current_frame: Vec<[[bool; 44]; 11]> = vec![];
+    for line in config.lines() {
+        if line.starts_with("speed =") {
+            if let Some(s) = line.split('=').nth(1) {
+                speed = s.trim().parse().unwrap_or(5);
+            }
+        } else if line.starts_with("padding =") {
+            if let Some(s) = line.split('=').nth(1) {
+                padding = s.trim().parse().unwrap_or(old_padding);
+            }
+        } else if line.starts_with("bitstring =") {
+            in_bitstring = true;
+        } else if in_bitstring {
+            if line.trim() == "\"\"\"" {
+                in_bitstring = false;
+                continue;
+            }
+            let chars: Vec<char> = line.chars().collect();
+            let row_len = 44 + padding as usize;
+            let num_frames = chars.len() / row_len;
+            for frame_index in 0..num_frames {
+                if current_frame.len() <= frame_index {
+                    current_frame.push([[false; 44]; 11]);
+                }
+                for x in 0..44 {
+                    let char_index = frame_index * row_len + x;
+                    if char_index < chars.len() {
+                        let last_y = current_frame.len() - 1;
+                        current_frame[frame_index][last_y][x] = chars[char_index] == 'X';
+                    }
+                }
+            }
+        }
+    }
+    for frame in current_frame {
+        frames.push(frame);
+    }
+    (frames, padding, speed)
+}
+
 #[component]
 pub fn Editor() -> Element {
     let mut frames = use_signal(|| vec![[[false; 44]; 11]]);
@@ -187,7 +232,6 @@ pub fn Editor() -> Element {
                 },
                 "Export"
             }
-
         }
     }
 }
