@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 use dioxus::prelude::*;
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
@@ -201,7 +203,8 @@ fn FrameEditor(
 
 #[component]
 pub fn Editor() -> Element {
-    let mut frames: Signal<Vec<Signal<FrameData>>> = use_signal(|| vec![Signal::new([[false; 44]; 11])]);
+    let mut frames: Signal<Vec<Signal<FrameData>>> =
+        use_signal(|| vec![Signal::new([[false; 44]; 11])]);
     let mut padding = use_signal(|| 0u8);
     let mut speed = use_signal(|| 5u8);
     let mut focused_frame = use_signal(|| 0usize);
