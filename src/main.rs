@@ -14,8 +14,26 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS } document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+        Banner {}
         Editor {}
 
+    }
+}
+
+#[component]
+fn Banner() -> Element {
+    rsx! {
+        div {
+            class: "p-3 mb-4 text-sm text-gray-300 bg-gray-800 border border-gray-700 rounded",
+            "Design animations for LED badges. Export configs to flash with "
+            a {
+                href: "https://github.com/fossasia/badgemagic-rs",
+                class: "text-blue-400 underline hover:text-blue-300",
+                target: "_blank",
+                "badgemagic-rs"
+            }
+            "."
+        }
     }
 }
 
@@ -288,22 +306,25 @@ pub fn Editor() -> Element {
                 }
 
             },
-            button {
-                class: "p-2 bg-blue-500 text-white btn",
-                onclick: move |_| {
-                    let last_frame = frames.read().last().cloned().unwrap_or([[false; 44]; 11]);
-                    frames.write().push(last_frame);
+            div {
+                class: "flex gap-4 w-full",
+                button {
+                    class: "p-2 bg-blue-500 text-white btn",
+                    onclick: move |_| {
+                        let last_frame = frames.read().last().cloned().unwrap_or([[false; 44]; 11]);
+                        frames.write().push(last_frame);
+                    },
+                    "Add Frame"
                 },
-                "Add Frame"
-            },
-            button {
-                class: "p-2 bg-purple-500 text-white btn",
-                onclick: move |_| {
-                    let current = frames();
-                    let mut reversed: Vec<_> = current.iter().rev().cloned().collect();
-                    frames.write().append(&mut reversed);
-                },
-                "Make Cycle"
+                button {
+                    class: "p-2 bg-purple-500 text-white btn",
+                    onclick: move |_| {
+                        let current = frames();
+                        let mut reversed: Vec<_> = current.iter().rev().cloned().collect();
+                        frames.write().append(&mut reversed);
+                    },
+                    "Make Cycle"
+                }
             },
             button {
                 onclick: move |_| async move {
@@ -324,22 +345,27 @@ pub fn Editor() -> Element {
                 },
                 "Export"
             }
-            input {
-                r#type: "file",
-                accept: ".toml",
-                onchange: move |e| async move {
-                    let files = e.files();
-                    if let Some(file) = files.first() {
-                        if let Ok(contents) = file.read_string().await {
-                            let (new_frames, new_padding, new_speed) = load_config(&contents, padding());
-                            if !new_frames.is_empty() {
-                                *frames.write() = new_frames;
-                                *padding.write() = new_padding;
-                                *speed.write() = new_speed;
+            label {
+                class: "p-2 bg-blue-500 text-white btn cursor-pointer text-center",
+                "Import"
+                input {
+                    r#type: "file",
+                    accept: ".toml",
+                    class: "hidden",
+                    onchange: move |e| async move {
+                        let files = e.files();
+                        if let Some(file) = files.first() {
+                            if let Ok(contents) = file.read_string().await {
+                                let (new_frames, new_padding, new_speed) = load_config(&contents, padding());
+                                if !new_frames.is_empty() {
+                                    *frames.write() = new_frames;
+                                    *padding.write() = new_padding;
+                                    *speed.write() = new_speed;
+                                }
                             }
                         }
-                    }
-                },
+                    },
+                }
             }
         }
     }
