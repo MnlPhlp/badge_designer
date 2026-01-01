@@ -55,12 +55,13 @@ pub fn Hero() -> Element {
     }
 }
 
-fn create_config(frames: Vec<[[bool; 44]; 11]>, padding: u8, speed: u8) -> String {
+fn create_config(frames: &[Signal<FrameData>], padding: u8, speed: u8) -> String {
     let mut bitstring = String::new();
     for y in 0..11 {
-        for frame in &frames {
+        for frame in frames {
+            let f = frame.read();
             for x in 0..44 {
-                bitstring.push(if frame[y][x] { 'X' } else { '_' });
+                bitstring.push(if f[y][x] { 'X' } else { '_' });
             }
             for _ in 0..padding {
                 bitstring.push('_');
@@ -77,12 +78,14 @@ bitstring = """
     )
 }
 
-fn load_config(config: &str, old_padding: u8) -> (Vec<[[bool; 44]; 11]>, u8, u8) {
+type FrameData = [[bool; 44]; 11];
+
+fn load_config(config: &str, old_padding: u8) -> (Vec<FrameData>, u8, u8) {
     let mut frames = Vec::new();
     let mut speed = 5;
     let mut padding = old_padding;
     let mut in_bitstring = false;
-    let mut current_frame: Vec<[[bool; 44]; 11]> = vec![];
+    let mut current_frame: Vec<FrameData> = vec![];
     let mut current_y = 0;
     for line in config.lines() {
         if line.starts_with("speed =") {
@@ -124,10 +127,81 @@ fn load_config(config: &str, old_padding: u8) -> (Vec<[[bool; 44]; 11]>, u8, u8)
 }
 
 #[component]
-pub fn Editor() -> Element {
-    let mut frames = use_signal(|| vec![[[false; 44]; 11]]);
+fn FrameEditor(
+    frame_index: usize,
+    frame: Signal<FrameData>,
+    is_focused: bool,
+    focused_x: usize,
+    focused_y: usize,
+    on_focus: EventHandler<(usize, usize)>,
+    on_remove: EventHandler<()>,
+) -> Element {
     let mut adding = use_signal(|| true);
     let mut active = use_signal(|| false);
+
+    rsx! {
+        div {
+            class: "flex",
+            div {
+                for y in 0..11 {
+                    div {
+                        class: "flex",
+                        for x in 0..44 {
+                            button {
+                                class: "w-4 h-4 border",
+                                class: if is_focused && focused_x == x && focused_y == y { "border-green-500 border-2" } else { "border-gray-300" },
+                                class: if frame.read()[y][x] { " bg-white" } else { "bg-black" },
+                                onmousedown: move |_| {
+                                    on_focus.call((x, y));
+                                    *adding.write() = !frame.read()[y][x];
+                                    *active.write() = true;
+                                    frame.write()[y][x] = adding();
+                                },
+                                onmouseenter: move |_| {
+                                    if active() {
+                                        frame.write()[y][x] = adding();
+                                    }
+                                },
+                                onmouseup: move |_| { *active.write() = false }
+                            }
+                        }
+                    }
+                }
+            },
+            div {
+                class: "flex gap-4",
+                button {
+                    class: "p-2 bg-blue-500 text-white btn",
+                    onclick: move |_| {
+                        let mut f = frame.write();
+                        for y in 0..11 {
+                            for x in 0..44 {
+                                f[y][x] = !f[y][x];
+                            }
+                        }
+                    },
+                    "invert"
+                }
+                button {
+                    class: "p-2 bg-blue-500 text-white btn",
+                    onclick: move |_| {
+                        *frame.write() = [[false; 44]; 11];
+                    },
+                    "clear"
+                }
+                button {
+                    class: "p-2 bg-red-500 text-white btn",
+                    onclick: move |_| on_remove.call(()),
+                    "X"
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn Editor() -> Element {
+    let mut frames: Signal<Vec<Signal<FrameData>>> = use_signal(|| vec![Signal::new([[false; 44]; 11])]);
     let mut padding = use_signal(|| 0u8);
     let mut speed = use_signal(|| 5u8);
     let mut focused_frame = use_signal(|| 0usize);
@@ -148,7 +222,7 @@ pub fn Editor() -> Element {
                     if !config.is_empty() {
                         let (new_frames, new_padding, new_speed) = load_config(&config, 0);
                         if !new_frames.is_empty() {
-                            *frames.write() = new_frames;
+                            *frames.write() = new_frames.into_iter().map(Signal::new).collect();
                             *padding.write() = new_padding;
                             *speed.write() = new_speed;
                         }
@@ -164,7 +238,7 @@ pub fn Editor() -> Element {
         if !loaded() {
             return None;
         }
-        Some(create_config(frames(), padding(), speed()))
+        Some(create_config(&frames.read(), padding(), speed()))
     });
 
     // Save to localStorage when config changes
@@ -206,7 +280,9 @@ pub fn Editor() -> Element {
                         let fi = focused_frame();
                         let fy = focused_y();
                         let fx = focused_x();
-                        frames.write()[fi][fy][fx] = !frames()[fi][fy][fx];
+                        let mut frame = frames.read()[fi];
+                        let current = frame.read()[fy][fx];
+                        frame.write()[fy][fx] = !current;
                     }
                     _ => {}
                 }
@@ -237,98 +313,47 @@ pub fn Editor() -> Element {
                     }
                 }
             },
-            for frame_index in 0..frames.read().len() {
-                div {
-                    class: "flex",
-                    div{
-                        for y in 0..11 {
-                            div {
-                                class: "flex",
-                                for x in 0..44 {
-                                    button {
-                                        class: "w-4 h-4 border",
-                                        class: if focused_frame() == frame_index && focused_x() == x && focused_y() == y { "border-green-500 border-2" } else { "border-gray-300" },
-                                        class: if frames.read()[frame_index][y][x] { " bg-white" } else { "bg-black" },
-                                        onmousedown: move |_| {
-                                            *focused_frame.write() = frame_index;
-                                            *focused_x.write() = x;
-                                            *focused_y.write() = y;
-                                            *adding.write() = !frames()[frame_index][y][x];
-                                            *active.write() = true;
-                                            frames.write()[frame_index][y][x] = adding();
-                                        },
-                                        onmouseenter: move |_| { if active() { frames.write()[frame_index][y][x] = adding() }},
-                                        onmouseup: move |_| { *active.write() = false }
-                                    }
-                                }
-
-                            }
-                        }
+            for (frame_index, frame) in frames.read().iter().copied().enumerate() {
+                FrameEditor {
+                    key: "{frame_index}",
+                    frame_index,
+                    frame,
+                    is_focused: focused_frame() == frame_index,
+                    focused_x: focused_x(),
+                    focused_y: focused_y(),
+                    on_focus: move |(x, y)| {
+                        *focused_frame.write() = frame_index;
+                        *focused_x.write() = x;
+                        *focused_y.write() = y;
                     },
-                    div {
-                        class: "flex gap-4",
-                        button {
-                            class: "p-2 bg-blue-500 text-white btn",
-                            onclick: {
-                                move |_| {
-                                    for y in 0..11 {
-                                        for x in 0..44{
-                                            frames.write()[frame_index][y][x] = !frames()[frame_index][y][x];
-                                        }
-                                    }
-                                }
-                            },
-                            "invert"
-                        }
-                        button {
-                            class: "p-2 bg-blue-500 text-white btn",
-                            onclick: {
-                                move |_| {
-                                    for y in 0..11 {
-                                        for x in 0..44{
-                                            frames.write()[frame_index][y][x] = false;
-                                        }
-                                    }
-                                }
-                            },
-                            "clear"
-                        }
-                        button {
-                            class: "p-2 bg-red-500 text-white btn",
-                            onclick: {
-                                move |_| {
-                                    frames.remove(frame_index);
-                                }
-                            },
-                            "X"
-                        }
-                    }
+                    on_remove: move |_| {
+                        frames.write().remove(frame_index);
+                    },
                 }
-
             },
             div {
                 class: "flex gap-4 w-full",
                 button {
                     class: "p-2 bg-blue-500 text-white btn",
                     onclick: move |_| {
-                        let last_frame = frames.read().last().cloned().unwrap_or([[false; 44]; 11]);
-                        frames.write().push(last_frame);
+                        let last_frame = frames.read().last().map(|f| f.read().clone()).unwrap_or([[false; 44]; 11]);
+                        frames.write().push(Signal::new(last_frame));
                     },
                     "Add Frame"
                 },
                 button {
                     class: "p-2 bg-purple-500 text-white btn",
                     onclick: move |_| {
-                        let current = frames();
-                        let mut reversed: Vec<_> = current.iter().rev().cloned().collect();
-                        frames.write().append(&mut reversed);
+                        let current: Vec<FrameData> = frames.read().iter().map(|f| f.read().clone()).collect();
+                        let reversed: Vec<Signal<FrameData>> = current.iter().rev().map(|f| Signal::new(*f)).collect();
+                        frames.write().extend(reversed);
                     },
                     "Make Cycle"
                 }
             },
             button {
                 onclick: move |_| async move {
-                    let file = create_config(frames(), padding(), speed());
+                    let file = create_config(&frames.read(), padding(), speed());
                     let js = format!(
                         r#"
                         const blob = new Blob([`{}`], {{ type: 'text/plain' }});
@@ -358,7 +383,7 @@ pub fn Editor() -> Element {
                             if let Ok(contents) = file.read_string().await {
                                 let (new_frames, new_padding, new_speed) = load_config(&contents, padding());
                                 if !new_frames.is_empty() {
-                                    *frames.write() = new_frames;
+                                    *frames.write() = new_frames.into_iter().map(Signal::new).collect();
                                     *padding.write() = new_padding;
                                     *speed.write() = new_speed;
                                 }
