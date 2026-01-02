@@ -5,6 +5,9 @@
 # HTML title tag content
 title = "badge_designer"
 
+# Base path for GitHub Pages (repo name)
+base_path = "badge_designer"
+
 # include `assets` in web platform
 [web.resource]
 
