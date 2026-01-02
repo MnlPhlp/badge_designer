@@ -1,50 +1,37 @@
-# Development
+# Badge Designer
 
-Your new bare-bones project includes minimal organization with a single `main.rs` file and a few assets.
+A web-based editor for designing LED badge animations. Create pixel art frames, configure animation speed, and export configurations to flash onto LED badges.
 
-```
-project/
-├─ assets/ # Any assets that are used by the app should be placed here
-├─ src/
-│  ├─ main.rs # main.rs is the entry point to your application and currently contains all components for the app
-├─ Cargo.toml # The Cargo.toml file defines the dependencies and feature flags for your project
-```
+## 🚀 [Try it online](https://mnlphlp.github.io/badge_designer)
 
-### Automatic Tailwind (Dioxus 0.7+)
+## Usage
 
-As of Dioxus 0.7, there no longer is a need to manually install tailwind. Simply `dx serve` and you're good to go!
+1. Click or drag on the grid to toggle pixels on/off
+2. Use the controls to invert, clear, clone, or remove frames
+3. Add frames with "Add Frame" or duplicate with "Clone"
+4. Use "Make Cycle" to create a smooth back-and-forth animation
+5. Export your design as a `.toml` file
+6. Flash to your badge using [badgemagic-rs](https://github.com/fossasia/badgemagic-rs)
 
-Automatic tailwind is supported by checking for a file called `tailwind.css` in your app's manifest directory (next to Cargo.toml). To customize the file, use the dioxus.toml:
+## Development
 
-```toml
-[application]
-tailwind_input = "my.css"
-tailwind_output = "assets/out.css" # also customize the location of the out file!
-```
+### Prerequisites
 
-### Tailwind Manual Install
-
-To use tailwind plugins or manually customize tailwind, you can can install the Tailwind CLI and use it directly.
-
-### Tailwind
-1. Install npm: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-2. Install the Tailwind CSS CLI: https://tailwindcss.com/docs/installation/tailwind-cli
-3. Run the following command in the root of the project to start the Tailwind CSS compiler:
+- [Rust](https://rustup.rs/)
+- [Dioxus CLI](https://dioxuslabs.com/learn/0.7/getting_started)
 
 ```bash
-npx @tailwindcss/cli -i ./input.css -o ./assets/tailwind.css --watch
+curl -sSL http://dioxus.dev/install.sh | sh
 ```
 
-### Serving Your App
-
-Run the following command in the root of your project to start developing with the default platform:
+### Run locally
 
 ```bash
 dx serve
 ```
 
-To run for a different platform, use the `--platform platform` flag. E.g.
-```bash
-dx serve --platform desktop
-```
+### Build for production
 
+```bash
+dx build --release
+```
