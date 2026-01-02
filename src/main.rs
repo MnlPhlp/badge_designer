@@ -39,24 +39,6 @@ fn Banner() -> Element {
     }
 }
 
-#[component]
-pub fn Hero() -> Element {
-    rsx! {
-        div {
-            id: "hero",
-            img { src: HEADER_SVG, id: "header" }
-            div { id: "links",
-                a { href: "https://dioxuslabs.com/learn/0.7/", "📚 Learn Dioxus" }
-                a { href: "https://dioxuslabs.com/awesome", "🚀 Awesome Dioxus" }
-                a { href: "https://github.com/dioxus-community/", "📡 Community Libraries" }
-                a { href: "https://github.com/DioxusLabs/sdk", "⚙️ Dioxus Development Kit" }
-                a { href: "https://marketplace.visualstudio.com/items?itemName=DioxusLabs.dioxus", "💫 VSCode Extension" }
-                a { href: "https://discord.gg/XgGxMSkvUM", "👋 Community Discord" }
-            }
-        }
-    }
-}
-
 fn create_config(frames: &[Signal<FrameData>], padding: u8, speed: u8) -> String {
     let mut bitstring = String::new();
     for y in 0..11 {
@@ -75,6 +57,8 @@ fn create_config(frames: &[Signal<FrameData>], padding: u8, speed: u8) -> String
         r#"[[message]]
 speed = {speed}
 mode = "fast"
+# padding is not used by badgemagic-rs, we just store it for the web editor 
+padding = {padding}
 bitstring = """
 {bitstring}""""#
     )
@@ -82,10 +66,10 @@ bitstring = """
 
 type FrameData = [[bool; 44]; 11];
 
-fn load_config(config: &str, old_padding: u8) -> (Vec<FrameData>, u8, u8) {
+fn load_config(config: &str) -> (Vec<FrameData>, u8, u8) {
     let mut frames = Vec::new();
     let mut speed = 5;
-    let mut padding = old_padding;
+    let mut padding = 0;
     let mut in_bitstring = false;
     let mut current_frame: Vec<FrameData> = vec![];
     let mut current_y = 0;
@@ -96,7 +80,7 @@ fn load_config(config: &str, old_padding: u8) -> (Vec<FrameData>, u8, u8) {
             }
         } else if line.starts_with("padding =") {
             if let Some(s) = line.split('=').nth(1) {
-                padding = s.trim().parse().unwrap_or(old_padding);
+                padding = s.trim().parse().unwrap_or_default();
             }
         } else if line.starts_with("bitstring =") {
             in_bitstring = true;
@@ -137,6 +121,7 @@ fn FrameEditor(
     focused_y: usize,
     on_focus: EventHandler<(usize, usize)>,
     on_remove: EventHandler<()>,
+    on_clone: EventHandler<()>,
 ) -> Element {
     let mut adding = use_signal(|| true);
     let mut active = use_signal(|| false);
@@ -196,6 +181,11 @@ fn FrameEditor(
                     onclick: move |_| on_remove.call(()),
                     "X"
                 }
+                button {
+                    class: "p-2 bg-purple-500 text-white btn",
+                    onclick: move |_| on_clone.call(()),
+                    "Clone"
+                }
             }
         }
     }
@@ -223,7 +213,7 @@ pub fn Editor() -> Element {
             if let Some(storage) = &storage {
                 if let Ok(Some(config)) = storage.get_item("badge_designer_state") {
                     if !config.is_empty() {
-                        let (new_frames, new_padding, new_speed) = load_config(&config, 0);
+                        let (new_frames, new_padding, new_speed) = load_config(&config);
                         if !new_frames.is_empty() {
                             *frames.write() = new_frames.into_iter().map(Signal::new).collect();
                             *padding.write() = new_padding;
@@ -291,6 +281,7 @@ pub fn Editor() -> Element {
                 }
             },
             label {
+                title: "Number of blank columns between frames. The original badge firmware uses a padding of 4.",
                 "Padding between frames: ",
                 input {
                     r#type: "number",
@@ -329,9 +320,13 @@ pub fn Editor() -> Element {
                         *focused_x.write() = x;
                         *focused_y.write() = y;
                     },
-                    on_remove: move |_| {
+                    on_remove: move |()| {
                         frames.write().remove(frame_index);
                     },
+                    on_clone: move |()| {
+                        let f = *frame.read();
+                        frames.write().insert(frame_index + 1, Signal::new(f));
+                    }
                 }
             },
             div {
@@ -339,7 +334,7 @@ pub fn Editor() -> Element {
                 button {
                     class: "p-2 bg-blue-500 text-white btn",
                     onclick: move |_| {
-                        let last_frame = frames.read().last().map(|f| f.read().clone()).unwrap_or([[false; 44]; 11]);
+                        let last_frame = frames.read().last().map(|f| *f.read()).unwrap_or([[false; 44]; 11]);
                         frames.write().push(Signal::new(last_frame));
                     },
                     "Add Frame"
@@ -347,7 +342,7 @@ pub fn Editor() -> Element {
                 button {
                     class: "p-2 bg-purple-500 text-white btn",
                     onclick: move |_| {
-                        let current: Vec<FrameData> = frames.read().iter().map(|f| f.read().clone()).collect();
+                        let current: Vec<FrameData> = frames.read().iter().map(|f| *f.read()).collect();
                         let reversed: Vec<Signal<FrameData>> = current.iter().rev().map(|f| Signal::new(*f)).collect();
                         frames.write().extend(reversed);
                     },
@@ -384,7 +379,7 @@ pub fn Editor() -> Element {
                         let files = e.files();
                         if let Some(file) = files.first() {
                             if let Ok(contents) = file.read_string().await {
-                                let (new_frames, new_padding, new_speed) = load_config(&contents, padding());
+                                let (new_frames, new_padding, new_speed) = load_config(&contents);
                                 if !new_frames.is_empty() {
                                     *frames.write() = new_frames.into_iter().map(Signal::new).collect();
                                     *padding.write() = new_padding;
