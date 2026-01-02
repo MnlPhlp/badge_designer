@@ -26,7 +26,7 @@ fn App() -> Element {
 fn Banner() -> Element {
     rsx! {
         div {
-            class: "p-3 mb-4 text-sm text-gray-300 bg-gray-800 border border-gray-700 rounded",
+            class: "p-3 m-4 text-sm text-gray-300 bg-gray-800 border border-gray-700 rounded",
             "Design animations for LED badges. Export configs to flash with "
             a {
                 href: "https://github.com/fossasia/badgemagic-rs",
@@ -128,7 +128,7 @@ fn FrameEditor(
 
     rsx! {
         div {
-            class: "flex",
+            class: "flex items-center",
             div {
                 for y in 0..11 {
                     div {
@@ -156,7 +156,7 @@ fn FrameEditor(
                 }
             },
             div {
-                class: "flex gap-4",
+                class: "flex flex-col gap-1 ml-1",
                 button {
                     class: "p-2 bg-blue-500 text-white btn",
                     onclick: move |_| {
@@ -177,14 +177,14 @@ fn FrameEditor(
                     "clear"
                 }
                 button {
-                    class: "p-2 bg-red-500 text-white btn",
-                    onclick: move |_| on_remove.call(()),
-                    "X"
-                }
-                button {
                     class: "p-2 bg-purple-500 text-white btn",
                     onclick: move |_| on_clone.call(()),
                     "Clone"
+                }
+                button {
+                    class: "p-2 bg-red-500 text-white btn",
+                    onclick: move |_| on_remove.call(()),
+                    "Delete"
                 }
             }
         }
@@ -245,7 +245,7 @@ pub fn Editor() -> Element {
 
     rsx! {
         div {
-            class: "flex flex-col gap-4",
+            class: "flex flex-col gap-4 mx-8 mb-8",
             tabindex: "0",
             onkeydown: move |e| {
                 match e.key() {
@@ -350,6 +350,7 @@ pub fn Editor() -> Element {
                 }
             },
             button {
+                class: "p-2 bg-green-500 text-white btn",
                 onclick: move |_| async move {
                     let file = create_config(&frames.read(), padding(), speed());
                     let js = format!(
