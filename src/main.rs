@@ -1,9 +1,9 @@
 #![allow(clippy::needless_range_loop)]
 
+use eframe::egui;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
-use eframe::egui;
-
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 700.0]),
@@ -14,6 +14,33 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|_cc| Ok(Box::new(BadgeDesigner::new()))),
     )
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use wasm_bindgen::JsCast;
+    
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+    
+    wasm_bindgen_futures::spawn_local(async {
+        let canvas = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("the_canvas_id")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .unwrap();
+        
+        eframe::WebRunner::new()
+            .start(
+                canvas,
+                eframe::WebOptions::default(),
+                Box::new(|_cc| Ok(Box::new(BadgeDesigner::new()))),
+            )
+            .await
+            .expect("failed to start eframe");
+    });
 }
 
 type FrameData = [[bool; 44]; 11];
@@ -153,6 +180,7 @@ impl eframe::App for BadgeDesigner {
                     }
                 }
                 FileOp::ExportReady(config) => {
+                    #[cfg(not(target_arch = "wasm32"))]
                     std::thread::spawn(move || {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("TOML", &["toml"])
@@ -162,6 +190,18 @@ impl eframe::App for BadgeDesigner {
                             let _ = std::fs::write(path, config);
                         }
                     });
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let task = rfd::AsyncFileDialog::new()
+                            .add_filter("TOML", &["toml"])
+                            .set_file_name("badge.toml")
+                            .save_file();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            if let Some(handle) = task.await {
+                                let _ = handle.write(config.as_bytes()).await;
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -340,6 +380,7 @@ impl eframe::App for BadgeDesigner {
                 if ui.button("Import").clicked() {
                     let tx = self.file_tx.clone();
                     let ctx = ctx.clone();
+                    #[cfg(not(target_arch = "wasm32"))]
                     std::thread::spawn(move || {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("TOML", &["toml"])
@@ -352,6 +393,22 @@ impl eframe::App for BadgeDesigner {
                             }
                         }
                     });
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let task = rfd::AsyncFileDialog::new()
+                            .add_filter("TOML", &["toml"])
+                            .pick_file();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            if let Some(handle) = task.await {
+                                let contents = handle.read().await;
+                                if let Ok(contents) = String::from_utf8(contents) {
+                                    let (new_frames, new_padding, new_speed) = load_config(&contents);
+                                    let _ = tx.send(FileOp::Import(new_frames, new_padding, new_speed));
+                                    ctx.request_repaint();
+                                }
+                            }
+                        });
+                    }
                 }
             });
         });

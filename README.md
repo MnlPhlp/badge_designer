@@ -1,6 +1,6 @@
 # Badge Designer
 
-A native desktop editor for designing LED badge animations using egui. Create pixel art frames, configure animation speed, and export configurations to flash onto LED badges.
+A desktop and web editor for designing LED badge animations using egui. Create pixel art frames, configure animation speed, and export configurations to flash onto LED badges.
 
 ## Usage
 
@@ -16,15 +16,32 @@ A native desktop editor for designing LED badge animations using egui. Create pi
 ### Prerequisites
 
 - [Rust](https://rustup.rs/)
+- [Trunk](https://trunkrs.dev/) (for web builds)
 
-### Run locally
+```bash
+cargo install trunk
+```
+
+### Run locally (native)
 
 ```bash
 cargo run
 ```
 
-### Build for release
+### Run locally (web)
+
+```bash
+trunk serve
+```
+
+### Build for release (native)
 
 ```bash
 cargo build --release
+```
+
+### Build for release (web)
+
+```bash
+trunk build --release
 ```

@@ -455,7 +455,11 @@ name = "badge_designer"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "log",
  "rfd",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
