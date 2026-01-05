@@ -19,9 +19,9 @@ fn main() -> eframe::Result<()> {
 #[cfg(target_arch = "wasm32")]
 fn main() {
     use wasm_bindgen::JsCast;
-    
+
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
-    
+
     wasm_bindgen_futures::spawn_local(async {
         let canvas = web_sys::window()
             .unwrap()
@@ -31,7 +31,7 @@ fn main() {
             .unwrap()
             .dyn_into::<web_sys::HtmlCanvasElement>()
             .unwrap();
-        
+
         eframe::WebRunner::new()
             .start(
                 canvas,
@@ -206,13 +206,75 @@ impl eframe::App for BadgeDesigner {
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.heading("Badge Designer");
-            ui.label(
-                "Design animations for LED badges. Export configs to flash with badgemagic-rs.",
-            );
-            ui.separator();
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Design animations for LED badges. Export configs to flash with");
+                ui.hyperlink_to("badgemagic-rs", "https://github.com/fossasia/badgemagic-rs");
+                ui.label(".");
+            });
+        });
 
+        egui::TopBottomPanel::bottom("controls").show(ctx, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button("Add Frame").clicked() {
+                    let last = self.frames.last().copied().unwrap_or([[false; 44]; 11]);
+                    self.frames.push(last);
+                }
+
+                if ui.button("Make Cycle").clicked() {
+                    let reversed: Vec<FrameData> = self.frames.iter().rev().copied().collect();
+                    self.frames.extend(reversed);
+                }
+
+                ui.separator();
+
+                if ui.button("Export").clicked() {
+                    let config = create_config(&self.frames, self.padding, self.speed);
+                    let _ = self.file_tx.send(FileOp::ExportReady(config));
+                }
+
+                if ui.button("Import").clicked() {
+                    let tx = self.file_tx.clone();
+                    let ctx = ctx.clone();
+                    #[cfg(not(target_arch = "wasm32"))]
+                    std::thread::spawn(move || {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("TOML", &["toml"])
+                            .pick_file()
+                        {
+                            if let Ok(contents) = std::fs::read_to_string(path) {
+                                let (new_frames, new_padding, new_speed) = load_config(&contents);
+                                let _ = tx.send(FileOp::Import(new_frames, new_padding, new_speed));
+                                ctx.request_repaint();
+                            }
+                        }
+                    });
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let task = rfd::AsyncFileDialog::new()
+                            .add_filter("TOML", &["toml"])
+                            .pick_file();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            if let Some(handle) = task.await {
+                                let contents = handle.read().await;
+                                if let Ok(contents) = String::from_utf8(contents) {
+                                    let (new_frames, new_padding, new_speed) =
+                                        load_config(&contents);
+                                    let _ =
+                                        tx.send(FileOp::Import(new_frames, new_padding, new_speed));
+                                    ctx.request_repaint();
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+            ui.add_space(4.0);
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Padding between frames:");
                 ui.add(egui::DragValue::new(&mut self.padding).range(0..=20));
@@ -314,7 +376,6 @@ impl eframe::App for BadgeDesigner {
                                 if self.drawing {
                                     self.draw_pixel();
                                 } else {
-                                    println!("Focused on frame {}, x {}, y {}", frame_index, x, y);
                                     self.start_drawing();
                                 }
                             }
@@ -353,61 +414,6 @@ impl eframe::App for BadgeDesigner {
                     self.frames.remove(idx);
                     if self.focused_frame >= self.frames.len() {
                         self.focused_frame = self.frames.len().saturating_sub(1);
-                    }
-                }
-            });
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                if ui.button("Add Frame").clicked() {
-                    let last = self.frames.last().copied().unwrap_or([[false; 44]; 11]);
-                    self.frames.push(last);
-                }
-
-                if ui.button("Make Cycle").clicked() {
-                    let reversed: Vec<FrameData> = self.frames.iter().rev().copied().collect();
-                    self.frames.extend(reversed);
-                }
-            });
-
-            ui.horizontal(|ui| {
-                if ui.button("Export").clicked() {
-                    let config = create_config(&self.frames, self.padding, self.speed);
-                    let _ = self.file_tx.send(FileOp::ExportReady(config));
-                }
-
-                if ui.button("Import").clicked() {
-                    let tx = self.file_tx.clone();
-                    let ctx = ctx.clone();
-                    #[cfg(not(target_arch = "wasm32"))]
-                    std::thread::spawn(move || {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("TOML", &["toml"])
-                            .pick_file()
-                        {
-                            if let Ok(contents) = std::fs::read_to_string(path) {
-                                let (new_frames, new_padding, new_speed) = load_config(&contents);
-                                let _ = tx.send(FileOp::Import(new_frames, new_padding, new_speed));
-                                ctx.request_repaint();
-                            }
-                        }
-                    });
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        let task = rfd::AsyncFileDialog::new()
-                            .add_filter("TOML", &["toml"])
-                            .pick_file();
-                        wasm_bindgen_futures::spawn_local(async move {
-                            if let Some(handle) = task.await {
-                                let contents = handle.read().await;
-                                if let Ok(contents) = String::from_utf8(contents) {
-                                    let (new_frames, new_padding, new_speed) = load_config(&contents);
-                                    let _ = tx.send(FileOp::Import(new_frames, new_padding, new_speed));
-                                    ctx.request_repaint();
-                                }
-                            }
-                        });
                     }
                 }
             });

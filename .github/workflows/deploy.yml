@@ -33,16 +33,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Install Dioxus CLI
-        run: cargo install dioxus-cli --locked || true
+      - name: Install Trunk
+        run: cargo install trunk --locked || true
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Build
-        run: dx build --release
+        run: trunk build --release --public-url /badge_designer/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: target/dx/badge_designer/release/web/public
+          path: dist
 
   deploy:
     environment:
