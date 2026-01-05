@@ -1,6 +1,6 @@
 # Badge Designer
 
-A desktop and web editor for designing LED badge animations using egui. Create pixel art frames, configure animation speed, and export configurations to flash onto LED badges.
+A desktop, web, and mobile editor for designing LED badge animations using egui. Create pixel art frames, configure animation speed, and export configurations to flash onto LED badges.
 
 ## Usage
 
@@ -44,4 +44,14 @@ cargo build --release
 
 ```bash
 trunk build --release
+```
+
+### Build for Android
+
+Requires Android SDK/NDK and `cargo-ndk`:
+
+```bash
+cargo install cargo-ndk
+rustup target add aarch64-linux-android
+cargo ndk -t arm64-v8a build --release --lib --no-default-features --features android
 ```

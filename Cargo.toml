@@ -6,20 +6,33 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "badge_designer_lib"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "badge_designer"
+path = "src/main.rs"
+
 [dependencies]
 eframe = { version = "0.31", default-features = false, features = [
     "default_fonts",
     "glow",
 ] }
 rfd = "0.15"
+log = "0.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
 wasm-bindgen = "0.2"
-log = "0.4"
 web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.14"
 
 [features]
 default = ["native"]
 native = ["eframe/default"]
 web = []
+android = ["eframe/android-game-activity"]
