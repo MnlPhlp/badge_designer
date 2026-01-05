@@ -1,8 +1,6 @@
 # Badge Designer
 
-A web-based editor for designing LED badge animations. Create pixel art frames, configure animation speed, and export configurations to flash onto LED badges.
-
-## 🚀 [Try it online](https://mnlphlp.github.io/badge_designer)
+A native desktop editor for designing LED badge animations using egui. Create pixel art frames, configure animation speed, and export configurations to flash onto LED badges.
 
 ## Usage
 
@@ -18,20 +16,15 @@ A web-based editor for designing LED badge animations. Create pixel art frames, 
 ### Prerequisites
 
 - [Rust](https://rustup.rs/)
-- [Dioxus CLI](https://dioxuslabs.com/learn/0.7/getting_started)
-
-```bash
-curl -sSL http://dioxus.dev/install.sh | sh
-```
 
 ### Run locally
 
 ```bash
-dx serve
+cargo run
 ```
 
-### Build for production
+### Build for release
 
 ```bash
-dx build --release
+cargo build --release
 ```

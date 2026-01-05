@@ -7,11 +7,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.7.1", features = [] }
-web-sys = { version = "0.3", features = ["Blob", "Url", "HtmlAnchorElement", "Document", "Window", "BlobPropertyBag", "Storage"] }
-
-[features]
-default = ["web"]
-web = ["dioxus/web"]
-desktop = ["dioxus/desktop"]
-mobile = ["dioxus/mobile"]
+eframe = "0.31"
+rfd = "0.15"

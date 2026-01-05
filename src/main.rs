@@ -1,51 +1,29 @@
 #![allow(clippy::needless_range_loop)]
 
-use dioxus::prelude::*;
+use std::sync::mpsc::{channel, Receiver, Sender};
 
-const FAVICON: Asset = asset!("/assets/favicon.ico");
-const MAIN_CSS: Asset = asset!("/assets/main.css");
-const HEADER_SVG: Asset = asset!("/assets/header.svg");
-const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
+use eframe::egui;
 
-fn main() {
-    dioxus::launch(App);
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 700.0]),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "Badge Designer",
+        options,
+        Box::new(|_cc| Ok(Box::new(BadgeDesigner::new()))),
+    )
 }
 
-#[component]
-fn App() -> Element {
-    rsx! {
-        document::Link { rel: "icon", href: FAVICON }
-        document::Link { rel: "stylesheet", href: MAIN_CSS } document::Link { rel: "stylesheet", href: TAILWIND_CSS }
-        Banner {}
-        Editor {}
+type FrameData = [[bool; 44]; 11];
 
-    }
-}
-
-#[component]
-fn Banner() -> Element {
-    rsx! {
-        div {
-            class: "p-3 m-4 text-sm text-gray-300 bg-gray-800 border border-gray-700 rounded",
-            "Design animations for LED badges. Export configs to flash with "
-            a {
-                href: "https://github.com/fossasia/badgemagic-rs",
-                class: "text-blue-400 underline hover:text-blue-300",
-                target: "_blank",
-                "badgemagic-rs"
-            }
-            "."
-        }
-    }
-}
-
-fn create_config(frames: &[Signal<FrameData>], padding: u8, speed: u8) -> String {
+fn create_config(frames: &[FrameData], padding: u8, speed: u8) -> String {
     let mut bitstring = String::new();
     for y in 0..11 {
         for frame in frames {
-            let f = frame.read();
             for x in 0..44 {
-                bitstring.push(if f[y][x] { 'X' } else { '_' });
+                bitstring.push(if frame[y][x] { 'X' } else { '_' });
             }
             for _ in 0..padding {
                 bitstring.push('_');
@@ -57,14 +35,12 @@ fn create_config(frames: &[Signal<FrameData>], padding: u8, speed: u8) -> String
         r#"[[message]]
 speed = {speed}
 mode = "fast"
-# padding is not used by badgemagic-rs, we just store it for the web editor 
+# padding is not used by badgemagic-rs, we just store it for the editor
 padding = {padding}
 bitstring = """
 {bitstring}""""#
     )
 }
-
-type FrameData = [[bool; 44]; 11];
 
 fn load_config(config: &str) -> (Vec<FrameData>, u8, u8) {
     let mut frames = Vec::new();
@@ -112,285 +88,272 @@ fn load_config(config: &str) -> (Vec<FrameData>, u8, u8) {
     (frames, padding, speed)
 }
 
-#[component]
-fn FrameEditor(
-    frame_index: usize,
-    frame: Signal<FrameData>,
-    is_focused: bool,
+enum FileOp {
+    Import(Vec<FrameData>, u8, u8),
+    ExportReady(String),
+}
+
+struct BadgeDesigner {
+    frames: Vec<FrameData>,
+    padding: u8,
+    speed: u8,
+    focused_frame: usize,
     focused_x: usize,
     focused_y: usize,
-    on_focus: EventHandler<(usize, usize)>,
-    on_remove: EventHandler<()>,
-    on_clone: EventHandler<()>,
-) -> Element {
-    let mut adding = use_signal(|| true);
-    let mut active = use_signal(|| false);
+    drawing: bool,
+    draw_value: bool,
+    file_rx: Receiver<FileOp>,
+    file_tx: Sender<FileOp>,
+}
 
-    rsx! {
-        div {
-            class: "flex items-center",
-            div {
-                for y in 0..11 {
-                    div {
-                        class: "flex",
-                        for x in 0..44 {
-                            button {
-                                class: "w-4 h-4 border",
-                                class: if is_focused && focused_x == x && focused_y == y { "border-green-500 border-2" } else { "border-gray-300" },
-                                class: if frame.read()[y][x] { " bg-white" } else { "bg-black" },
-                                onmousedown: move |_| {
-                                    on_focus.call((x, y));
-                                    *adding.write() = !frame.read()[y][x];
-                                    *active.write() = true;
-                                    frame.write()[y][x] = adding();
-                                },
-                                onmouseenter: move |_| {
-                                    if active() {
-                                        frame.write()[y][x] = adding();
-                                    }
-                                },
-                                onmouseup: move |_| { *active.write() = false }
-                            }
-                        }
-                    }
-                }
-            },
-            div {
-                class: "flex flex-col gap-1 ml-1",
-                button {
-                    class: "p-2 bg-blue-500 text-white btn",
-                    onclick: move |_| {
-                        let mut f = frame.write();
-                        for y in 0..11 {
-                            for x in 0..44 {
-                                f[y][x] = !f[y][x];
-                            }
-                        }
-                    },
-                    "invert"
-                }
-                button {
-                    class: "p-2 bg-blue-500 text-white btn",
-                    onclick: move |_| {
-                        *frame.write() = [[false; 44]; 11];
-                    },
-                    "clear"
-                }
-                button {
-                    class: "p-2 bg-purple-500 text-white btn",
-                    onclick: move |_| on_clone.call(()),
-                    "Clone"
-                }
-                button {
-                    class: "p-2 bg-red-500 text-white btn",
-                    onclick: move |_| on_remove.call(()),
-                    "Delete"
-                }
-            }
+impl BadgeDesigner {
+    fn new() -> Self {
+        let (tx, rx) = channel();
+        Self {
+            frames: vec![[[false; 44]; 11]],
+            padding: 0,
+            speed: 5,
+            focused_frame: 0,
+            focused_x: 0,
+            focused_y: 0,
+            drawing: false,
+            draw_value: true,
+            file_tx: tx,
+            file_rx: rx,
         }
+    }
+
+    fn start_drawing(&mut self) {
+        if self.drawing {
+            return;
+        }
+        self.draw_value = !self.frames[self.focused_frame][self.focused_y][self.focused_x];
+        self.drawing = true;
+        self.draw_pixel();
+    }
+
+    fn draw_pixel(&mut self) {
+        if !self.drawing {
+            return;
+        }
+        self.frames[self.focused_frame][self.focused_y][self.focused_x] = self.draw_value;
     }
 }
 
-#[component]
-pub fn Editor() -> Element {
-    let mut frames: Signal<Vec<Signal<FrameData>>> =
-        use_signal(|| vec![Signal::new([[false; 44]; 11])]);
-    let mut padding = use_signal(|| 0u8);
-    let mut speed = use_signal(|| 5u8);
-    let mut focused_frame = use_signal(|| 0usize);
-    let mut focused_x = use_signal(|| 0usize);
-    let mut focused_y = use_signal(|| 0usize);
-    let mut loaded = use_signal(|| false);
-
-    let storage = web_sys::window()
-        .and_then(|w| w.local_storage().ok())
-        .flatten();
-
-    // Load from localStorage on mount
-    {
-        let storage = storage.clone();
-        use_effect(move || {
-            if let Some(storage) = &storage {
-                if let Ok(Some(config)) = storage.get_item("badge_designer_state") {
-                    if !config.is_empty() {
-                        let (new_frames, new_padding, new_speed) = load_config(&config);
-                        if !new_frames.is_empty() {
-                            *frames.write() = new_frames.into_iter().map(Signal::new).collect();
-                            *padding.write() = new_padding;
-                            *speed.write() = new_speed;
-                        }
+impl eframe::App for BadgeDesigner {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check for file operation results
+        if let Ok(op) = self.file_rx.try_recv() {
+            match op {
+                FileOp::Import(new_frames, new_padding, new_speed) => {
+                    if !new_frames.is_empty() {
+                        self.frames = new_frames;
+                        self.padding = new_padding;
+                        self.speed = new_speed;
                     }
+                }
+                FileOp::ExportReady(config) => {
+                    std::thread::spawn(move || {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("TOML", &["toml"])
+                            .set_file_name("badge.toml")
+                            .save_file()
+                        {
+                            let _ = std::fs::write(path, config);
+                        }
+                    });
                 }
             }
-            *loaded.write() = true;
-        });
-    }
-
-    // Memo that only produces a value after loaded
-    let save_config = use_memo(move || {
-        if !loaded() {
-            return None;
         }
-        Some(create_config(&frames.read(), padding(), speed()))
-    });
 
-    // Save to localStorage when config changes
-    use_effect(move || {
-        if let Some(config) = save_config() {
-            if let Some(storage) = &storage {
-                let _ = storage.set_item("badge_designer_state", &config);
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Badge Designer");
+            ui.label(
+                "Design animations for LED badges. Export configs to flash with badgemagic-rs.",
+            );
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                ui.label("Padding between frames:");
+                ui.add(egui::DragValue::new(&mut self.padding).range(0..=20));
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Speed:");
+                ui.add(egui::DragValue::new(&mut self.speed).range(1..=7));
+            });
+
+            ui.separator();
+
+            // Handle keyboard navigation
+            if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) && self.focused_y > 0 {
+                self.focused_y -= 1;
+                self.draw_pixel();
             }
-        }
-    });
+            if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) && self.focused_y < 10 {
+                self.focused_y += 1;
+                self.draw_pixel();
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) && self.focused_x > 0 {
+                self.focused_x -= 1;
+                self.draw_pixel();
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) && self.focused_x < 43 {
+                self.focused_x += 1;
+                self.draw_pixel();
+            }
+            if ctx.input(|i| i.key_down(egui::Key::Space)) {
+                self.start_drawing();
+            } else if ctx.input(|i| i.key_released(egui::Key::Space)) {
+                self.drawing = false;
+            }
 
-    rsx! {
-        div {
-            class: "flex flex-col gap-4 mx-8 mb-8",
-            tabindex: "0",
-            onkeydown: move |e| {
-                match e.key() {
-                    Key::ArrowUp => {
-                        if focused_y() > 0 {
-                            *focused_y.write() -= 1;
-                        }
-                    }
-                    Key::ArrowDown => {
-                        if focused_y() < 10 {
-                            *focused_y.write() += 1;
-                        }
-                    }
-                    Key::ArrowLeft => {
-                        if focused_x() > 0 {
-                            *focused_x.write() -= 1;
-                        }
-                    }
-                    Key::ArrowRight => {
-                        if focused_x() < 43 {
-                            *focused_x.write() += 1;
-                        }
-                    }
-                    Key::Character(c) if c == " " => {
-                        let fi = focused_frame();
-                        let fy = focused_y();
-                        let fx = focused_x();
-                        let mut frame = frames.read()[fi];
-                        let current = frame.read()[fy][fx];
-                        frame.write()[fy][fx] = !current;
-                    }
-                    _ => {}
-                }
-            },
-            label {
-                title: "Number of blank columns between frames. The original badge firmware uses a padding of 4.",
-                "Padding between frames: ",
-                input {
-                    r#type: "number",
-                    value: "{padding}",
-                    oninput: move |e| {
-                        if let Ok(value) = e.value().parse::<u8>() {
-                            *padding.write() = value;
-                        }
-                    }
-                }
-            },
-            label {
-                "Speed: ",
-                input {
-                    r#type: "number",
-                    value: "{speed}",
-                    oninput: move |e| {
-                        if let Ok(value) = e.value().parse::<u8>() {
-                            if value >= 1 && value <= 7 {
-                                *speed.write() = value;
+            // Release drawing on mouse release
+            if ctx.input(|i| i.pointer.any_released()) {
+                self.drawing = false;
+            }
+
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let mut frame_to_remove: Option<usize> = None;
+                let mut frame_to_clone: Option<usize> = None;
+
+                for frame_index in 0..self.frames.len() {
+                    ui.horizontal(|ui| {
+                        let is_focused = self.focused_frame == frame_index;
+
+                        // Draw frame grid
+                        let cell_size = 12.0;
+                        let (response, painter) = ui.allocate_painter(
+                            egui::vec2(44.0 * cell_size, 11.0 * cell_size),
+                            egui::Sense::click_and_drag(),
+                        );
+                        let rect = response.rect;
+
+                        for y in 0..11 {
+                            for x in 0..44 {
+                                let cell_rect = egui::Rect::from_min_size(
+                                    rect.min
+                                        + egui::vec2(x as f32 * cell_size, y as f32 * cell_size),
+                                    egui::vec2(cell_size, cell_size),
+                                );
+
+                                let is_on = self.frames[frame_index][y][x];
+                                let fill = if is_on {
+                                    egui::Color32::WHITE
+                                } else {
+                                    egui::Color32::BLACK
+                                };
+
+                                painter.rect_filled(cell_rect, 0.0, fill);
+
+                                let stroke =
+                                    if is_focused && self.focused_x == x && self.focused_y == y {
+                                        egui::Stroke::new(2.0, egui::Color32::GREEN)
+                                    } else {
+                                        egui::Stroke::new(0.5, egui::Color32::GRAY)
+                                    };
+                                painter.rect_stroke(
+                                    cell_rect,
+                                    0.0,
+                                    stroke,
+                                    egui::StrokeKind::Inside,
+                                );
                             }
                         }
-                    }
-                }
-            },
-            for (frame_index, frame) in frames.read().iter().copied().enumerate() {
-                FrameEditor {
-                    key: "{frame_index}",
-                    frame_index,
-                    frame,
-                    is_focused: focused_frame() == frame_index,
-                    focused_x: focused_x(),
-                    focused_y: focused_y(),
-                    on_focus: move |(x, y)| {
-                        *focused_frame.write() = frame_index;
-                        *focused_x.write() = x;
-                        *focused_y.write() = y;
-                    },
-                    on_remove: move |()| {
-                        frames.write().remove(frame_index);
-                    },
-                    on_clone: move |()| {
-                        let f = *frame.read();
-                        frames.write().insert(frame_index + 1, Signal::new(f));
-                    }
-                }
-            },
-            div {
-                class: "flex gap-4 w-full",
-                button {
-                    class: "p-2 bg-blue-500 text-white btn",
-                    onclick: move |_| {
-                        let last_frame = frames.read().last().map(|f| *f.read()).unwrap_or([[false; 44]; 11]);
-                        frames.write().push(Signal::new(last_frame));
-                    },
-                    "Add Frame"
-                },
-                button {
-                    class: "p-2 bg-purple-500 text-white btn",
-                    onclick: move |_| {
-                        let current: Vec<FrameData> = frames.read().iter().map(|f| *f.read()).collect();
-                        let reversed: Vec<Signal<FrameData>> = current.iter().rev().map(|f| Signal::new(*f)).collect();
-                        frames.write().extend(reversed);
-                    },
-                    "Make Cycle"
-                }
-            },
-            button {
-                class: "p-2 bg-green-500 text-white btn",
-                onclick: move |_| async move {
-                    let file = create_config(&frames.read(), padding(), speed());
-                    let js = format!(
-                        r#"
-                        const blob = new Blob([`{}`], {{ type: 'text/plain' }});
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'badge.toml';
-                        a.click();
-                        URL.revokeObjectURL(url);
-                        "#,
-                        file
-                    );
-                    document::eval(&js);
-                },
-                "Export"
-            }
-            label {
-                class: "p-2 bg-blue-500 text-white btn cursor-pointer text-center",
-                "Import"
-                input {
-                    r#type: "file",
-                    accept: ".toml",
-                    class: "hidden",
-                    onchange: move |e| async move {
-                        let files = e.files();
-                        if let Some(file) = files.first() {
-                            if let Ok(contents) = file.read_string().await {
-                                let (new_frames, new_padding, new_speed) = load_config(&contents);
-                                if !new_frames.is_empty() {
-                                    *frames.write() = new_frames.into_iter().map(Signal::new).collect();
-                                    *padding.write() = new_padding;
-                                    *speed.write() = new_speed;
+
+                        // Handle mouse interaction
+                        if let Some(pos) = response.interact_pointer_pos() {
+                            let local_pos = pos - rect.min;
+                            let x = (local_pos.x / cell_size) as usize;
+                            let y = (local_pos.y / cell_size) as usize;
+                            if x < 44 && y < 11 && response.is_pointer_button_down_on() {
+                                self.focused_frame = frame_index;
+                                self.focused_x = x;
+                                self.focused_y = y;
+
+                                if self.drawing {
+                                    self.draw_pixel();
+                                } else {
+                                    println!("Focused on frame {}, x {}, y {}", frame_index, x, y);
+                                    self.start_drawing();
                                 }
                             }
                         }
-                    },
+
+                        // Frame control buttons
+                        ui.vertical(|ui| {
+                            if ui.button("Invert").clicked() {
+                                for y in 0..11 {
+                                    for x in 0..44 {
+                                        self.frames[frame_index][y][x] =
+                                            !self.frames[frame_index][y][x];
+                                    }
+                                }
+                            }
+                            if ui.button("Clear").clicked() {
+                                self.frames[frame_index] = [[false; 44]; 11];
+                            }
+                            if ui.button("Clone").clicked() {
+                                frame_to_clone = Some(frame_index);
+                            }
+                            if ui.button("Delete").clicked() && self.frames.len() > 1 {
+                                frame_to_remove = Some(frame_index);
+                            }
+                        });
+                    });
+                    ui.add_space(10.0);
                 }
-            }
-        }
+
+                // Apply deferred mutations
+                if let Some(idx) = frame_to_clone {
+                    let cloned = self.frames[idx];
+                    self.frames.insert(idx + 1, cloned);
+                }
+                if let Some(idx) = frame_to_remove {
+                    self.frames.remove(idx);
+                    if self.focused_frame >= self.frames.len() {
+                        self.focused_frame = self.frames.len().saturating_sub(1);
+                    }
+                }
+            });
+
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                if ui.button("Add Frame").clicked() {
+                    let last = self.frames.last().copied().unwrap_or([[false; 44]; 11]);
+                    self.frames.push(last);
+                }
+
+                if ui.button("Make Cycle").clicked() {
+                    let reversed: Vec<FrameData> = self.frames.iter().rev().copied().collect();
+                    self.frames.extend(reversed);
+                }
+            });
+
+            ui.horizontal(|ui| {
+                if ui.button("Export").clicked() {
+                    let config = create_config(&self.frames, self.padding, self.speed);
+                    let _ = self.file_tx.send(FileOp::ExportReady(config));
+                }
+
+                if ui.button("Import").clicked() {
+                    let tx = self.file_tx.clone();
+                    let ctx = ctx.clone();
+                    std::thread::spawn(move || {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("TOML", &["toml"])
+                            .pick_file()
+                        {
+                            if let Ok(contents) = std::fs::read_to_string(path) {
+                                let (new_frames, new_padding, new_speed) = load_config(&contents);
+                                let _ = tx.send(FileOp::Import(new_frames, new_padding, new_speed));
+                                ctx.request_repaint();
+                            }
+                        }
+                    });
+                }
+            });
+        });
     }
 }
