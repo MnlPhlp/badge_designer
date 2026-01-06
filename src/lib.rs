@@ -1,6 +1,6 @@
 #![allow(clippy::needless_range_loop)]
 
-use eframe::egui;
+use eframe::egui::{self, Button};
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -233,6 +233,9 @@ impl eframe::App for BadgeDesigner {
             }
         }
 
+        let button_width = 60.0;
+        let button_height = 24.0;
+
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.heading("Badge Designer");
             ui.horizontal_wrapped(|ui| {
@@ -245,12 +248,18 @@ impl eframe::App for BadgeDesigner {
         egui::TopBottomPanel::bottom("controls").show(ctx, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.button("Add Frame").clicked() {
+                if ui
+                    .add_sized([button_width, button_height], Button::new("Add Frame"))
+                    .clicked()
+                {
                     let last = self.frames.last().copied().unwrap_or([[false; 44]; 11]);
                     self.frames.push(last);
                 }
 
-                if ui.button("Make Cycle").clicked() {
+                if ui
+                    .add_sized([button_width, button_height], Button::new("Make Cycle"))
+                    .clicked()
+                {
                     let reversed: Vec<FrameData> = self.frames.iter().rev().copied().collect();
                     self.frames.extend(reversed);
                 }
@@ -259,12 +268,18 @@ impl eframe::App for BadgeDesigner {
 
                 #[cfg(not(target_os = "android"))]
                 {
-                    if ui.button("Export").clicked() {
+                    if ui
+                        .add_sized([button_width, button_height], Button::new("Export"))
+                        .clicked()
+                    {
                         let config = create_config(&self.frames, self.padding, self.speed);
                         let _ = self.file_tx.send(FileOp::ExportReady(config));
                     }
 
-                    if ui.button("Import").clicked() {
+                    if ui
+                        .add_sized([button_width, button_height], Button::new("Import"))
+                        .clicked()
+                    {
                         let tx = self.file_tx.clone();
                         let ctx = ctx.clone();
                         #[cfg(not(target_arch = "wasm32"))]
@@ -356,7 +371,6 @@ impl eframe::App for BadgeDesigner {
                 let mut frame_to_clone: Option<usize> = None;
 
                 // Calculate cell size based on available width (reserve space for buttons)
-                let button_width = 60.0;
                 let spacing = ui.spacing().item_spacing.x;
                 let max_grid_width = panel_width - button_width - spacing;
                 let cell_size = (max_grid_width / 44.0).max(4.0).min(12.0);
@@ -426,12 +440,23 @@ impl eframe::App for BadgeDesigner {
                         // Frame control buttons (vertically centered)
                         let grid_height = 11.0 * cell_size;
                         ui.vertical(|ui| {
-                            let button_height = 20.0;
-                            let buttons_height = 4.0 * button_height + 3.0 * ui.spacing().item_spacing.y;
+                            let buttons_height =
+                                4.0 * button_height + 3.0 * ui.spacing().item_spacing.y;
                             let top_padding = (grid_height - buttons_height) / 2.0;
                             ui.add_space(top_padding.max(0.0));
+
+                            let button_style = |text: &str, color: egui::Color32| {
+                                egui::Button::new(
+                                    egui::RichText::new(text).color(egui::Color32::WHITE),
+                                )
+                                .fill(color)
+                            };
+
                             if ui
-                                .add_sized([button_width, 0.0], egui::Button::new("Invert"))
+                                .add_sized(
+                                    [button_width, button_height],
+                                    button_style("Invert", egui::Color32::from_rgb(70, 130, 180)),
+                                )
                                 .clicked()
                             {
                                 for y in 0..11 {
@@ -442,19 +467,28 @@ impl eframe::App for BadgeDesigner {
                                 }
                             }
                             if ui
-                                .add_sized([button_width, 0.0], egui::Button::new("Clear"))
+                                .add_sized(
+                                    [button_width, button_height],
+                                    button_style("Clear", egui::Color32::from_rgb(200, 100, 50)),
+                                )
                                 .clicked()
                             {
                                 self.frames[frame_index] = [[false; 44]; 11];
                             }
                             if ui
-                                .add_sized([button_width, 0.0], egui::Button::new("Clone"))
+                                .add_sized(
+                                    [button_width, button_height],
+                                    button_style("Clone", egui::Color32::from_rgb(60, 150, 90)),
+                                )
                                 .clicked()
                             {
                                 frame_to_clone = Some(frame_index);
                             }
                             if ui
-                                .add_sized([button_width, 0.0], egui::Button::new("Delete"))
+                                .add_sized(
+                                    [button_width, button_height],
+                                    button_style("Delete", egui::Color32::from_rgb(180, 50, 50)),
+                                )
                                 .clicked()
                                 && self.frames.len() > 1
                             {
