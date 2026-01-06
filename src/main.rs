@@ -13,7 +13,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Badge Designer",
         options,
-        Box::new(|_cc| Ok(Box::new(BadgeDesigner::new()))),
+        Box::new(|cc| Ok(Box::new(BadgeDesigner::new(cc)))),
     )
 }
 
@@ -37,7 +37,7 @@ fn main() {
             .start(
                 canvas,
                 eframe::WebOptions::default(),
-                Box::new(|_cc| Ok(Box::new(BadgeDesigner::new()))),
+                Box::new(|cc| Ok(Box::new(BadgeDesigner::new(cc)))),
             )
             .await
             .expect("failed to start eframe");

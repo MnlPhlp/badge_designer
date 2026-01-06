@@ -1,9 +1,46 @@
 #![allow(clippy::needless_range_loop)]
 
 use eframe::egui;
+use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 pub type FrameData = [[bool; 44]; 11];
+
+/// Persistent state that survives application reloads (uses Vec for serde compatibility)
+#[derive(Serialize, Deserialize)]
+struct PersistentState {
+    frames: Vec<Vec<Vec<bool>>>,
+    padding: u8,
+    speed: u8,
+}
+
+impl PersistentState {
+    fn from_frames(frames: &[FrameData], padding: u8, speed: u8) -> Self {
+        Self {
+            frames: frames
+                .iter()
+                .map(|frame| frame.iter().map(|row| row.to_vec()).collect())
+                .collect(),
+            padding,
+            speed,
+        }
+    }
+
+    fn to_frames(&self) -> Vec<FrameData> {
+        self.frames
+            .iter()
+            .map(|frame| {
+                let mut arr = [[false; 44]; 11];
+                for (y, row) in frame.iter().enumerate().take(11) {
+                    for (x, &val) in row.iter().enumerate().take(44) {
+                        arr[y][x] = val;
+                    }
+                }
+                arr
+            })
+            .collect()
+    }
+}
 
 pub fn create_config(frames: &[FrameData], padding: u8, speed: u8) -> String {
     let mut bitstring = String::new();
@@ -93,13 +130,33 @@ pub struct BadgeDesigner {
     pub file_tx: Sender<FileOp>,
 }
 
+const STORAGE_KEY: &str = "badge_designer_state";
+
 impl BadgeDesigner {
-    pub fn new() -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let (tx, rx) = channel();
+        
+        // Try to restore previous state
+        let (frames, padding, speed) = if let Some(storage) = cc.storage {
+            if let Some(state) = eframe::get_value::<PersistentState>(storage, STORAGE_KEY) {
+                let frames = state.to_frames();
+                let frames = if frames.is_empty() {
+                    vec![[[false; 44]; 11]]
+                } else {
+                    frames
+                };
+                (frames, state.padding, state.speed)
+            } else {
+                (vec![[[false; 44]; 11]], 0, 5)
+            }
+        } else {
+            (vec![[[false; 44]; 11]], 0, 5)
+        };
+        
         Self {
-            frames: vec![[[false; 44]; 11]],
-            padding: 0,
-            speed: 5,
+            frames,
+            padding,
+            speed,
             focused_frame: 0,
             focused_x: 0,
             focused_y: 0,
@@ -127,13 +184,12 @@ impl BadgeDesigner {
     }
 }
 
-impl Default for BadgeDesigner {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl eframe::App for BadgeDesigner {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let state = PersistentState::from_frames(&self.frames, self.padding, self.speed);
+        eframe::set_value(storage, STORAGE_KEY, &state);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Check for file operation results
         if let Ok(op) = self.file_rx.try_recv() {
@@ -416,6 +472,6 @@ fn android_main(app: eframe::native::android::AndroidApp) {
     eframe::run_native(
         "Badge Designer",
         options,
-        Box::new(|_cc| Ok(Box::new(BadgeDesigner::new()))),
+        Box::new(|cc| Ok(Box::new(BadgeDesigner::new(cc)))),
     ).unwrap();
 }
