@@ -135,7 +135,7 @@ const STORAGE_KEY: &str = "badge_designer_state";
 impl BadgeDesigner {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let (tx, rx) = channel();
-        
+
         // Try to restore previous state
         let (frames, padding, speed) = if let Some(storage) = cc.storage {
             if let Some(state) = eframe::get_value::<PersistentState>(storage, STORAGE_KEY) {
@@ -152,7 +152,7 @@ impl BadgeDesigner {
         } else {
             (vec![[[false; 44]; 11]], 0, 5)
         };
-        
+
         Self {
             frames,
             padding,
@@ -274,8 +274,10 @@ impl eframe::App for BadgeDesigner {
                                 .pick_file()
                             {
                                 if let Ok(contents) = std::fs::read_to_string(path) {
-                                    let (new_frames, new_padding, new_speed) = load_config(&contents);
-                                    let _ = tx.send(FileOp::Import(new_frames, new_padding, new_speed));
+                                    let (new_frames, new_padding, new_speed) =
+                                        load_config(&contents);
+                                    let _ =
+                                        tx.send(FileOp::Import(new_frames, new_padding, new_speed));
                                     ctx.request_repaint();
                                 }
                             }
@@ -291,8 +293,11 @@ impl eframe::App for BadgeDesigner {
                                     if let Ok(contents) = String::from_utf8(contents) {
                                         let (new_frames, new_padding, new_speed) =
                                             load_config(&contents);
-                                        let _ =
-                                            tx.send(FileOp::Import(new_frames, new_padding, new_speed));
+                                        let _ = tx.send(FileOp::Import(
+                                            new_frames,
+                                            new_padding,
+                                            new_speed,
+                                        ));
                                         ctx.request_repaint();
                                     }
                                 }
@@ -345,18 +350,25 @@ impl eframe::App for BadgeDesigner {
                 self.drawing = false;
             }
 
+            let panel_width = ui.available_width();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let mut frame_to_remove: Option<usize> = None;
                 let mut frame_to_clone: Option<usize> = None;
 
+                // Calculate cell size based on available width (reserve space for buttons)
+                let button_width = 60.0;
+                let spacing = ui.spacing().item_spacing.x;
+                let max_grid_width = panel_width - button_width - spacing;
+                let cell_size = (max_grid_width / 44.0).max(4.0).min(12.0);
+                let grid_width = 44.0 * cell_size;
+                let padding = (panel_width - grid_width - button_width - spacing) / 2.0;
+
                 for frame_index in 0..self.frames.len() {
                     ui.horizontal(|ui| {
+                        ui.add_space(padding);
                         let is_focused = self.focused_frame == frame_index;
-
-                        // Draw frame grid
-                        let cell_size = 12.0;
                         let (response, painter) = ui.allocate_painter(
-                            egui::vec2(44.0 * cell_size, 11.0 * cell_size),
+                            egui::vec2(grid_width, 11.0 * cell_size),
                             egui::Sense::click_and_drag(),
                         );
                         let rect = response.rect;
@@ -411,9 +423,17 @@ impl eframe::App for BadgeDesigner {
                             }
                         }
 
-                        // Frame control buttons
+                        // Frame control buttons (vertically centered)
+                        let grid_height = 11.0 * cell_size;
                         ui.vertical(|ui| {
-                            if ui.button("Invert").clicked() {
+                            let button_height = 20.0;
+                            let buttons_height = 4.0 * button_height + 3.0 * ui.spacing().item_spacing.y;
+                            let top_padding = (grid_height - buttons_height) / 2.0;
+                            ui.add_space(top_padding.max(0.0));
+                            if ui
+                                .add_sized([button_width, 0.0], egui::Button::new("Invert"))
+                                .clicked()
+                            {
                                 for y in 0..11 {
                                     for x in 0..44 {
                                         self.frames[frame_index][y][x] =
@@ -421,16 +441,27 @@ impl eframe::App for BadgeDesigner {
                                     }
                                 }
                             }
-                            if ui.button("Clear").clicked() {
+                            if ui
+                                .add_sized([button_width, 0.0], egui::Button::new("Clear"))
+                                .clicked()
+                            {
                                 self.frames[frame_index] = [[false; 44]; 11];
                             }
-                            if ui.button("Clone").clicked() {
+                            if ui
+                                .add_sized([button_width, 0.0], egui::Button::new("Clone"))
+                                .clicked()
+                            {
                                 frame_to_clone = Some(frame_index);
                             }
-                            if ui.button("Delete").clicked() && self.frames.len() > 1 {
+                            if ui
+                                .add_sized([button_width, 0.0], egui::Button::new("Delete"))
+                                .clicked()
+                                && self.frames.len() > 1
+                            {
                                 frame_to_remove = Some(frame_index);
                             }
                         });
+                        ui.add_space(padding);
                     });
                     ui.add_space(10.0);
                 }
@@ -459,7 +490,7 @@ use eframe::Renderer;
 #[no_mangle]
 fn android_main(app: eframe::native::android::AndroidApp) {
     use eframe::native::android::android_activity;
-    
+
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
@@ -468,10 +499,11 @@ fn android_main(app: eframe::native::android::AndroidApp) {
         renderer: Renderer::Glow,
         ..Default::default()
     };
-    
+
     eframe::run_native(
         "Badge Designer",
         options,
         Box::new(|cc| Ok(Box::new(BadgeDesigner::new(cc)))),
-    ).unwrap();
+    )
+    .unwrap();
 }
