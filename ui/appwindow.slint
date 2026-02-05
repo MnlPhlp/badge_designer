@@ -85,6 +85,7 @@ component FrameEditor inherits Rectangle {
                 pixels: root.pixels;
                 focused-x: is-focused-frame ? root.focused-x : -1;
                 focused-y: is-focused-frame ? root.focused-y : -1;
+                cell-size: 20px;
                 pixel-clicked(x, y) => {
                     root.pixel-clicked(x, y);
                 }
