@@ -327,27 +327,6 @@ pub fn run_ui() -> Result<(), slint::PlatformError> {
         ui.set_speed(state.speed as i32);
     }
 
-    // Helper to update frames data in UI
-    let update_frames = {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        move || {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                let d = designer.borrow();
-                let frames_vec: Vec<slint::ModelRc<bool>> = (0..d.frame_count())
-                    .map(|i| {
-                        let pixels = d.get_frame_pixels(i);
-                        slint::ModelRc::new(slint::VecModel::from(pixels))
-                    })
-                    .collect();
-                ui.set_frames_data(slint::ModelRc::new(slint::VecModel::from(frames_vec)));
-            }
-        }
-    };
-
-    // Initial frames update
-    update_frames();
-
     // Helper to save state
     let save_state = {
         let ui_weak = ui.as_weak();
@@ -360,6 +339,29 @@ pub fn run_ui() -> Result<(), slint::PlatformError> {
             }
         }
     };
+
+    // Helper to update frames data in UI
+    let update_frames = {
+        let ui_weak = ui.as_weak();
+        let designer_weak = Rc::downgrade(&designer);
+        let save_state = save_state.clone();
+        move || {
+            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
+                let d = designer.borrow();
+                let frames_vec: Vec<slint::ModelRc<bool>> = (0..d.frame_count())
+                    .map(|i| {
+                        let pixels = d.get_frame_pixels(i);
+                        slint::ModelRc::new(slint::VecModel::from(pixels))
+                    })
+                    .collect();
+                ui.set_frames_data(slint::ModelRc::new(slint::VecModel::from(frames_vec)));
+            }
+            save_state();
+        }
+    };
+
+    // Initial frames update
+    update_frames();
 
     // Add frame callback
     {
@@ -444,6 +446,7 @@ pub fn run_ui() -> Result<(), slint::PlatformError> {
             move || {
                 println!("Stop drawing");
                 designer.borrow_mut().drawing = false;
+                save_state();
             }
         });
     }
