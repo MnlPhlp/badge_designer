@@ -1,0 +1,346 @@
+import {
+    Button,
+    VerticalBox,
+    HorizontalBox,
+    ScrollView,
+    GridBox,
+} from "std-widgets.slint";
+
+export struct PixelCell {
+    is_on: bool,
+    is_focused: bool,
+}
+
+export struct Frame {
+    // Flattened 11x44 grid (11 rows * 44 columns = 484 pixels)
+    pixels: [bool],
+}
+
+component PixelGrid inherits Rectangle {
+    in property <int> rows: 11;
+    in property <int> cols: 44;
+    in property <[bool]> pixels;
+    in property <int> focused-x: -1;
+    in property <int> focused-y: -1;
+    callback pixel-clicked(int, int);
+    callback pixel-dragged(int, int);
+    callback pointer-released();
+    min-width: cols * 12px;
+    min-height: rows * 12px;
+    background: #1a1a1a;
+    for row in rows: Rectangle {
+        y: row * parent.height / rows;
+        height: parent.height / rows;
+        for col in cols: Rectangle {
+            property <int> index: row * cols + col;
+            property <bool> is-on: index < pixels.length ? pixels[index] : false;
+            property <bool> is-focused: col == focused-x && row == focused-y;
+            x: col * parent.width / cols;
+            width: parent.width / cols;
+            background: is-on ? Colors.white : Colors.black;
+            border-color: is-focused ? Colors.green : Colors.gray;
+            border-width: is-focused ? 2px : 0.5px;
+        }
+    }
+    TouchArea {
+        pointer-event(event) => {
+            let col = Math.floor((self.mouse-x / parent.width) * cols);
+            let row = Math.floor((self.mouse-y / parent.height) * rows);
+            if (event.kind == PointerEventKind.down) {
+                root.pixel-clicked(col, row);
+            } else if (event.kind == PointerEventKind.move) {
+                root.pixel-dragged(col, row);
+            } else if (event.kind == PointerEventKind.up) {
+                root.pointer-released();
+            }
+        }
+    }
+}
+
+component FrameEditor inherits Rectangle {
+    in property <[bool]> pixels;
+    in property <int> frame-index;
+    in property <int> focused-x;
+    in property <int> focused-y;
+    in property <bool> is-focused-frame;
+    in property <bool> drawing;
+    callback pixel-clicked(int, int);
+    callback pixel-dragged(int, int);
+    callback pointer-released();
+    callback invert-frame();
+    callback clear-frame();
+    callback clone-frame();
+    callback delete-frame();
+    min-height: 200px;
+    HorizontalBox {
+        padding: 10px;
+        spacing: 10px;
+        PixelGrid {
+            rows: 11;
+            cols: 44;
+            pixels: root.pixels;
+            focused-x: is-focused-frame ? root.focused-x : -1;
+            focused-y: is-focused-frame ? root.focused-y : -1;
+            pixel-clicked(x, y) => {
+                root.pixel-clicked(x, y);
+            }
+            pixel-dragged(x, y) => {
+                root.pixel-dragged(x, y);
+            }
+            pointer-released() => {
+                root.pointer-released();
+            }
+        }
+
+        VerticalBox {
+            alignment: center;
+            spacing: 5px;
+            Button {
+                text: "Invert";
+                clicked => {
+                    root.invert-frame();
+                }
+            }
+
+            Button {
+                text: "Clear";
+                clicked => {
+                    root.clear-frame();
+                }
+            }
+
+            Button {
+                text: "Clone";
+                clicked => {
+                    root.clone-frame();
+                }
+            }
+
+            Button {
+                text: "Delete";
+                clicked => {
+                    root.delete-frame();
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Badge Designer";
+    preferred-width: 900px;
+    preferred-height: 700px;
+    background: #2a2a2a;
+    
+    // State
+    in-out property <int> frame-padding: 0;
+    in-out property <int> speed: 5;
+    in-out property <int> frame-count: 1;
+    in-out property <int> focused-frame: 0;
+    in-out property <[[bool]]> frames-data;
+    
+    // Drawing state
+    property <bool> is-drawing: false;
+    property <bool> draw-value: false;
+    
+    // Callbacks
+    callback add-frame();
+    callback make-cycle();
+    callback export-config();
+    callback import-config();
+    callback invert-frame(int);
+    callback clear-frame(int);
+    callback clone-frame(int);
+    callback delete-frame(int);
+    
+    // Pixel modification callbacks
+    callback start-drawing(int, int, int);  // frame-idx, x, y - toggles pixel and starts drawing mode
+    callback continue-drawing(int, int, int);  // frame-idx, x, y - continues drawing with same value
+    callback stop-drawing();
+    VerticalBox {
+        padding: 10px;
+        spacing: 10px;
+        
+        // Header
+        HorizontalBox {
+            Text {
+                text: "Badge Designer";
+                font-size: 24px;
+                color: Colors.white;
+                horizontal-alignment: left;
+            }
+        }
+
+        Text {
+            text: "Design animations for LED badges. Export configs to flash with badgemagic-rs.";
+            font-size: 12px;
+            color: #cccccc;
+            wrap: word-wrap;
+        }
+        
+        // Controls
+        HorizontalBox {
+            spacing: 10px;
+            Text {
+                text: "Padding between frames:";
+                vertical-alignment: center;
+                color: Colors.white;
+            }
+
+            HorizontalBox {
+                spacing: 5px;
+                Button {
+                    text: "-";
+                    max-width: 30px;
+                    clicked => {
+                        if (root.frame-padding > 0) {
+                            root.frame-padding -= 1;
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.frame-padding;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    color: Colors.white;
+                    min-width: 40px;
+                }
+
+                Button {
+                    text: "+";
+                    max-width: 30px;
+                    clicked => {
+                        if (root.frame-padding < 20) {
+                            root.frame-padding += 1;
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 20px;
+            }
+
+            Text {
+                text: "Speed:";
+                vertical-alignment: center;
+                color: Colors.white;
+            }
+
+            HorizontalBox {
+                spacing: 5px;
+                Button {
+                    text: "-";
+                    max-width: 30px;
+                    clicked => {
+                        if (root.speed > 1) {
+                            root.speed -= 1;
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.speed;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    color: Colors.white;
+                    min-width: 40px;
+                }
+
+                Button {
+                    text: "+";
+                    max-width: 30px;
+                    clicked => {
+                        if (root.speed < 7) {
+                            root.speed += 1;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Frame editors in scrollable area
+        ScrollView {
+            viewport-height: frame-count * 220px;
+            VerticalBox {
+                spacing: 10px;
+                for frame-idx in frame-count: FrameEditor {
+                    frame-index: frame-idx;
+                    pixels: frame-idx < frames-data.length ? frames-data[frame-idx] : [];
+                    focused-x: 0;
+                    focused-y: 0;
+                    is-focused-frame: frame-idx == root.focused-frame;
+                    drawing: false;
+                    pixel-clicked(x, y) => {
+                        self.drawing = true;
+                        root.start-drawing(frame-idx, x, y);
+                        self.focused-x = x;
+                        self.focused-y = y;
+                        root.focused-frame = frame-idx;
+                    }
+                    pixel-dragged(x, y) => {
+                        if (self.drawing) {
+                            root.continue-drawing(frame-idx, x, y);
+                            self.focused-x = x;
+                            self.focused-y = y;
+                            root.focused-frame = frame-idx;
+                        }
+                    }
+                    pointer-released() => {
+                        self.drawing = false;
+                        root.stop-drawing();
+                    }
+                    invert-frame => {
+                        root.invert-frame(frame-idx);
+                    }
+                    clear-frame => {
+                        root.clear-frame(frame-idx);
+                    }
+                    clone-frame => {
+                        root.clone-frame(frame-idx);
+                    }
+                    delete-frame => {
+                        root.delete-frame(frame-idx);
+                    }
+                }
+            }
+        }
+        
+        // Bottom controls
+        HorizontalBox {
+            spacing: 10px;
+            Button {
+                text: "Add Frame";
+                clicked => {
+                    root.add-frame();
+                }
+            }
+
+            Button {
+                text: "Make Cycle";
+                clicked => {
+                    root.make-cycle();
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            Button {
+                text: "Export";
+                clicked => {
+                    root.export-config();
+                }
+            }
+
+            Button {
+                text: "Import";
+                clicked => {
+                    root.import-config();
+                }
+            }
+        }
+    }
+}
