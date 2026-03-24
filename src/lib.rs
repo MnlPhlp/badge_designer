@@ -1,16 +1,11 @@
 use serde::{Deserialize, Serialize};
-use slint::Model;
-use std::cell::RefCell;
-use std::rc::Rc;
-
-slint::include_modules!();
 
 pub type FrameData = [[bool; 44]; 11];
 
 #[cfg(target_arch = "wasm32")]
 const STORAGE_KEY: &str = "badge_designer_state";
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BadgeState {
     pub frames: Vec<Vec<Vec<bool>>>,
     pub padding: u8,
@@ -54,7 +49,7 @@ impl BadgeState {
             .collect()
     }
 
-    fn load() -> Self {
+    pub fn load() -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Some(proj_dirs) =
@@ -86,7 +81,7 @@ impl BadgeState {
         }
     }
 
-    fn save(&self) {
+    pub fn save(&self) {
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Some(proj_dirs) =
@@ -115,13 +110,13 @@ impl BadgeState {
 }
 
 pub struct BadgeDesigner {
-    frames: Vec<FrameData>,
-    drawing: bool,
-    draw_value: bool,
+    pub frames: Vec<FrameData>,
+    pub drawing: bool,
+    pub draw_value: bool,
 }
 
 impl BadgeDesigner {
-    pub fn new() -> Rc<RefCell<Self>> {
+    pub fn new() -> Self {
         let state = BadgeState::load();
         let frames = state.to_frames();
         let frames = if frames.is_empty() {
@@ -130,11 +125,11 @@ impl BadgeDesigner {
             frames
         };
 
-        Rc::new(RefCell::new(Self {
+        Self {
             frames,
             drawing: false,
             draw_value: true,
-        }))
+        }
     }
 
     pub fn save(&self, padding: u8, speed: u8) {
@@ -155,12 +150,6 @@ impl BadgeDesigner {
             }
         }
         pixels
-    }
-
-    pub fn set_pixel(&mut self, frame_idx: usize, x: usize, y: usize, value: bool) {
-        if frame_idx < self.frames.len() && x < 44 && y < 11 {
-            self.frames[frame_idx][y][x] = value;
-        }
     }
 
     pub fn start_drawing(&mut self, frame_idx: usize, x: usize, y: usize) {
@@ -312,291 +301,8 @@ bitstring = """
     }
 }
 
-pub fn run_ui() -> Result<(), slint::PlatformError> {
-    let ui = AppWindow::new()?;
-    let designer = BadgeDesigner::new();
-
-    // Load initial state
-    let state = BadgeState::load();
-
-    // Initialize UI state
-    {
-        let d = designer.borrow();
-        ui.set_frame_count(d.frame_count() as i32);
-        ui.set_frame_padding(state.padding as i32);
-        ui.set_speed(state.speed as i32);
+impl Default for BadgeDesigner {
+    fn default() -> Self {
+        Self::new()
     }
-
-    // Helper to save state
-    let save_state = {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        move || {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                let padding = ui.get_frame_padding() as u8;
-                let speed = ui.get_speed() as u8;
-                designer.borrow().save(padding, speed);
-            }
-        }
-    };
-
-    // Helper to update frames data in UI
-    let update_frames = {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        let save_state = save_state.clone();
-        move || {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                let d = designer.borrow();
-                let frames_vec: Vec<slint::ModelRc<bool>> = (0..d.frame_count())
-                    .map(|i| {
-                        let pixels = d.get_frame_pixels(i);
-                        slint::ModelRc::new(slint::VecModel::from(pixels))
-                    })
-                    .collect();
-                ui.set_frames_data(slint::ModelRc::new(slint::VecModel::from(frames_vec)));
-            }
-            save_state();
-        }
-    };
-
-    // Initial frames update
-    update_frames();
-
-    // Add frame callback
-    {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        let update_frames = update_frames.clone();
-        ui.on_add_frame(move || {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                designer.borrow_mut().add_frame();
-                ui.set_frame_count(designer.borrow().frame_count() as i32);
-                update_frames();
-            }
-        });
-    }
-
-    // Make cycle callback
-    {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        let update_frames = update_frames.clone();
-        ui.on_make_cycle(move || {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                designer.borrow_mut().make_cycle();
-                ui.set_frame_count(designer.borrow().frame_count() as i32);
-                update_frames();
-            }
-        });
-    }
-
-    // Pixel drawing callbacks (modify UI model directly)
-    {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-
-        ui.on_start_drawing(move |frame_idx, x, y| {
-            println!("Start drawing at frame {}, x {}, y {}", frame_idx, x, y);
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                let frames_data = ui.get_frames_data();
-                if frame_idx >= 0 && (frame_idx as usize) < frames_data.row_count() {
-                    let frame_model = frames_data.row_data(frame_idx as usize).unwrap();
-                    let index = (y * 44 + x) as usize;
-                    if index < frame_model.row_count() {
-                        let current = frame_model.row_data(index).unwrap();
-                        let new_value = !current;
-                        frame_model.set_row_data(index, new_value);
-
-                        // Store draw state in designer
-                        let mut d = designer.borrow_mut();
-                        d.draw_value = new_value;
-                        d.drawing = true;
-                    }
-                }
-            }
-        });
-
-        let ui_weak2 = ui.as_weak();
-        let designer_weak2 = Rc::downgrade(&designer);
-
-        ui.on_continue_drawing(move |frame_idx, x, y| {
-            if let (Some(ui), Some(designer)) = (ui_weak2.upgrade(), designer_weak2.upgrade()) {
-                let d = designer.borrow();
-                if !d.drawing {
-                    return;
-                }
-                println!("Continue drawing at frame {}, x {}, y {}", frame_idx, x, y);
-                let draw_value = d.draw_value;
-                drop(d);
-
-                let frames_data = ui.get_frames_data();
-                if frame_idx >= 0 && (frame_idx as usize) < frames_data.row_count() {
-                    let frame_model = frames_data.row_data(frame_idx as usize).unwrap();
-                    let index = (y * 44 + x) as usize;
-                    if index < frame_model.row_count() {
-                        frame_model.set_row_data(index, draw_value);
-                    }
-                }
-            }
-        });
-
-        ui.on_stop_drawing({
-            let designer = designer.clone();
-            move || {
-                println!("Stop drawing");
-                designer.borrow_mut().drawing = false;
-                save_state();
-            }
-        });
-    }
-
-    // Invert frame callback
-    {
-        let designer_weak = Rc::downgrade(&designer);
-        let update_frames = update_frames.clone();
-        ui.on_invert_frame(move |frame_idx| {
-            if let Some(designer) = designer_weak.upgrade() {
-                designer.borrow_mut().invert_frame(frame_idx as usize);
-                update_frames();
-            }
-        });
-    }
-
-    // Clear frame callback
-    {
-        let designer_weak = Rc::downgrade(&designer);
-        let update_frames = update_frames.clone();
-        ui.on_clear_frame(move |frame_idx| {
-            if let Some(designer) = designer_weak.upgrade() {
-                designer.borrow_mut().clear_frame(frame_idx as usize);
-                update_frames();
-            }
-        });
-    }
-
-    // Clone frame callback
-    {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        let update_frames = update_frames.clone();
-        ui.on_clone_frame(move |frame_idx| {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                designer.borrow_mut().clone_frame(frame_idx as usize);
-                ui.set_frame_count(designer.borrow().frame_count() as i32);
-                update_frames();
-            }
-        });
-    }
-
-    // Delete frame callback
-    {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        let update_frames = update_frames.clone();
-        ui.on_delete_frame(move |frame_idx| {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                designer.borrow_mut().delete_frame(frame_idx as usize);
-                ui.set_frame_count(designer.borrow().frame_count() as i32);
-                update_frames();
-            }
-        });
-    }
-
-    // Export callback
-    {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        ui.on_export_config(move || {
-            if let (Some(ui), Some(designer)) = (ui_weak.upgrade(), designer_weak.upgrade()) {
-                let padding = ui.get_frame_padding() as u8;
-                let speed = ui.get_speed() as u8;
-                let config = designer.borrow().export_config(padding, speed);
-
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("TOML", &["toml"])
-                        .set_file_name("badge.toml")
-                        .save_file()
-                    {
-                        let _ = std::fs::write(path, config);
-                    }
-                }
-
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let task = rfd::AsyncFileDialog::new()
-                        .add_filter("TOML", &["toml"])
-                        .set_file_name("badge.toml")
-                        .save_file();
-                    wasm_bindgen_futures::spawn_local(async move {
-                        if let Some(handle) = task.await {
-                            let _ = handle.write(config.as_bytes()).await;
-                        }
-                    });
-                }
-            }
-        });
-    }
-
-    // Import callback
-    {
-        let ui_weak = ui.as_weak();
-        let designer_weak = Rc::downgrade(&designer);
-        let update_frames = update_frames.clone();
-        ui.on_import_config(move || {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("TOML", &["toml"])
-                    .pick_file()
-                {
-                    if let Ok(contents) = std::fs::read_to_string(path) {
-                        if let (Some(ui), Some(designer)) =
-                            (ui_weak.upgrade(), designer_weak.upgrade())
-                        {
-                            let result = designer.borrow_mut().import_config(&contents);
-                            if let Ok((padding, speed)) = result {
-                                ui.set_frame_padding(padding as i32);
-                                ui.set_speed(speed as i32);
-                                ui.set_frame_count(designer.borrow().frame_count() as i32);
-                                update_frames();
-                            }
-                        }
-                    }
-                }
-            }
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                let ui_weak_clone = ui_weak.clone();
-                let designer_weak_clone = designer_weak.clone();
-                let update_frames_clone = update_frames.clone();
-                let task = rfd::AsyncFileDialog::new()
-                    .add_filter("TOML", &["toml"])
-                    .pick_file();
-                wasm_bindgen_futures::spawn_local(async move {
-                    if let Some(handle) = task.await {
-                        let contents = handle.read().await;
-                        if let Ok(contents) = String::from_utf8(contents) {
-                            if let (Some(ui), Some(designer)) =
-                                (ui_weak_clone.upgrade(), designer_weak_clone.upgrade())
-                            {
-                                let result = designer.borrow_mut().import_config(&contents);
-                                if let Ok((padding, speed)) = result {
-                                    ui.set_frame_padding(padding as i32);
-                                    ui.set_speed(speed as i32);
-                                    ui.set_frame_count(designer.borrow().frame_count() as i32);
-                                    update_frames_clone();
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-        });
-    }
-
-    ui.run()
 }

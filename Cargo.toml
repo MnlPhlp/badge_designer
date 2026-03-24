@@ -5,7 +5,7 @@ authors = ["MnlPhlp <online@philipp-manuel.de>"]
 edition = "2021"
 
 [lib]
-crate-type = ["rlib"]
+crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [[bin]]
@@ -13,7 +13,7 @@ name = "badge_designer"
 path = "src/main.rs"
 
 [dependencies]
-slint = "1.9"
+iced = { version = "0.14", features = ["canvas", "tokio"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rfd = "0.15"
@@ -27,22 +27,5 @@ wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = ["Storage", "Window", "EventTarget"] }
 
-[build-dependencies]
-slint-build = "1.9"
-
-# Always compile Slint with optimizations for better performance
-[profile.dev.package.slint]
-opt-level = 3
-
-[profile.dev.package.i-slint-backend-winit]
-opt-level = 3
-
-[profile.dev.package.i-slint-core]
-opt-level = 3
-
-[profile.dev.package.i-slint-renderer-skia]
-opt-level = 3
-
-[profile.dev.package."*"]
-opt-level = 1
-
+[features]
+debug = ["iced/hot"]
